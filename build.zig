@@ -9,11 +9,11 @@ pub fn build(b: *std.Build) void {
     const log = b.option(bool, "log", "Enable protocol message logging") orelse false;
 
     const exe = b.addExecutable(.{
-        .name = "example",
+        .name = "main",
         .root_source_file = if (@hasField(std.Build.LazyPath, "path"))
-            .{ .path = "example.zig" }
+            .{ .path = "src/gen1/main.zig" }
         else
-            b.path("example.zig"),
+            b.path("src/gen1/main.zig"),
         .optimize = optimize,
         .target = target,
     });
@@ -23,7 +23,6 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
