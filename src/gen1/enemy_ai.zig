@@ -4,12 +4,12 @@ const print = std.debug.print;
 var prng = std.Random.DefaultPrng.init(1);
 var rand = prng.random();
 var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
+
 const pkmn = @import("pkmn");
 const Move = pkmn.gen1.Move;
 const effects = Move.Effect;
 
-/// Enemy AI will always be Player 2
-pub const ENEMY_PID: pkmn.Player = .P2;
+const tools = @import("tools.zig");
 
 const MoveData = struct {
     choice: pkmn.Choice,
@@ -29,10 +29,10 @@ const SwitchData = struct {
 pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) !pkmn.Choice {
     const allocator = gpalloc.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-    const player_side: *const pkmn.gen1.Side = battle.foe(ENEMY_PID);
-    const enemy_side: *const pkmn.gen1.Side = battle.side(ENEMY_PID);
+    const player_side: *const pkmn.gen1.Side = battle.side(tools.PLAYER_PID);
+    const enemy_side: *const pkmn.gen1.Side = battle.side(tools.ENEMY_PID);
 
-    const max_choice = battle.choices(ENEMY_PID, result.p2, &choices);
+    const max_choice = battle.choices(tools.ENEMY_PID, result.p2, &choices);
     const valid_choices = choices[0..max_choice];
     assert(valid_choices.len > 0);
 
