@@ -10,7 +10,6 @@ const player_ai = @import("player_ai.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
 pub fn main() !void {
-    const alloc = arena.allocator();
     var battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
         .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
@@ -35,10 +34,8 @@ pub fn main() !void {
     );
 
     const result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
-    const root: ?*player_ai.DecisionNode = try player_ai.exhaustive_decision_tree(null, battle, result, alloc, 0);
+    const root: ?*player_ai.DecisionNode = try player_ai.optimal_decision_tree(battle, result, gpa.allocator());
     try player_ai.traverse_decision_tree(root);
-
-    arena.deinit();
 }
 
 pub fn random_vs_enemy_ai() void {
