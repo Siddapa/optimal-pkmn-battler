@@ -6,9 +6,9 @@ const pkmn = @import("pkmn");
 const tools = @import("tools.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
-const MAX_TURNDEPTH: u16 = 500;
+const MAX_TURNDEPTH: u16 = 10;
 const MAX_LOOKAHEAD: u16 = 3;
-const K_LARGEST: u16 = 2;
+const K_LARGEST: u16 = 4;
 
 pub const TurnChoices = struct { choices: [2]pkmn.Choice, turn: ?*DecisionNode };
 
@@ -36,8 +36,8 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     i = K_LARGEST;
     original_len = root.?.*.next_turns.items.len;
     while (i < original_len) {
-        const delete_node = root.?.*.next_turns.swapRemove(K_LARGEST);
-        free_tree(delete_node.turn, alloc);
+        // Could've broke
+        free_tree(root.?.*.next_turns.swapRemove(K_LARGEST).turn, alloc);
         i += 1;
     }
     for (root.?.*.next_turns.items, 0..) |next_turn, j| {
@@ -55,8 +55,8 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
         // Extend leaves of scoring_nodes to maximize depth for scoring
         for (scoring_nodes) |scoring_node| {
             _ = try exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.result, alloc, 0);
-            scoring_node.?.*.score = score(scoring_node, get_parent_turnchoice(scoring_node).choices[0]);
             for (scoring_node.?.*.next_turns.items) |potential_node| {
+                potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices[0]);
                 if (potential_node.turn != null) {
                     try potential_nodes.append(potential_node);
                 }
@@ -92,7 +92,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 }
 
 // TODO Access leaves for extension without recursing from a root node
-pub fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, alloc: std.mem.Allocator, depth: u16) !?*DecisionNode {
+fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, alloc: std.mem.Allocator, depth: u16) !?*DecisionNode {
     if (curr_node == null) {
         // Max possible depth to quickly generate is 6
         if (result.type != .None or depth == MAX_LOOKAHEAD) {
@@ -154,7 +154,6 @@ pub fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*Decisi
                 var next_battle = curr_node.?.*.battle.*;
                 const new_result = try next_battle.update(next_turn.choices[0], next_turn.choices[1], &options);
                 curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, new_result, alloc, depth + 1);
-                // try curr_node.?.*.next_turns.append(.{ .choices = [2]pkmn.Choice{ pkmn.Choice{}, pkmn.Choice{} }, .turn = try exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle.*, curr_node.?.*.result, alloc, depth + 1) });
             } else {
                 _ = try exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle.*, curr_node.?.*.result, alloc, depth + 1);
             }
@@ -190,9 +189,9 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
         print("Select one of the following choices: \n", .{});
         for (curr_node.?.*.next_turns.items, 0..) |next_turn, i| {
             if (next_turn.choices[0].type == pkmn.Choice.Type.Move) {
-                print("{}={s} ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).stored().move(next_turn.choices[0].data).id), curr_node.?.*.score });
+                print("{}={s} ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).stored().move(next_turn.choices[0].data).id), next_turn.turn.?.*.score });
             } else if (next_turn.choices[0].type == pkmn.Choice.Type.Switch and next_turn.choices[0].data != 42) {
-                print("{}={s} ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).get(next_turn.choices[0].data).species), curr_node.?.*.score });
+                print("{}={s} ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).get(next_turn.choices[0].data).species), next_turn.turn.?.*.score });
             } else if (next_turn.choices[0].type == pkmn.Choice.Type.Pass) {
                 print("c=continue, ", .{});
             }
@@ -257,7 +256,7 @@ fn compare_score(_: void, n1: TurnChoices, n2: TurnChoices) bool {
     }
 }
 
-pub fn score(scoring_node: ?*DecisionNode, choice_to_node: pkmn.Choice) u16 {
+fn score(scoring_node: ?*DecisionNode, choice_to_node: pkmn.Choice) u16 {
     var sum: u16 = 0;
 
     const previous_battle = scoring_node.?.*.previous_turn.?.*.battle.*;
@@ -269,14 +268,16 @@ pub fn score(scoring_node: ?*DecisionNode, choice_to_node: pkmn.Choice) u16 {
     // const scoring_enemy_active  = scoring_battle.side(tools.ENEMY_PID).active;
 
     if (choice_to_node.type == pkmn.Choice.Type.Move) {
-        sum += 200;
+        sum += 20;
         // Fast Kill
         if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {
             sum += 10;
             // Fast MultiKill
             // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
         } else if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {}
-    } else if (choice_to_node.type == pkmn.Choice.Type.Switch) {}
+    } else if (choice_to_node.type == pkmn.Choice.Type.Switch) {} else if (choice_to_node.type == pkmn.Choice.Type.Pass) {
+        sum += 100;
+    }
 
     return sum;
 }
