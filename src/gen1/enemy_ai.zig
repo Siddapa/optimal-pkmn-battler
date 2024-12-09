@@ -79,7 +79,7 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
             }
         }
         // TODO Look into whether rejection sampling matters
-        const random_choice = minimal_priority_choices.items[rand.uintLessThan(u64, minimal_priority_choices.items.len)];
+        const random_choice = minimal_priority_choices.items[rand.uintLessThan(usize, minimal_priority_choices.items.len)];
         return choice_priorities.items[random_choice].choice;
     } else {
         // Find lowest current-order switch that matches original team order

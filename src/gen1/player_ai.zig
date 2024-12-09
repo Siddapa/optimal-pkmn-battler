@@ -6,9 +6,17 @@ const pkmn = @import("pkmn");
 const tools = @import("tools.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
-const MAX_TURNDEPTH: u16 = 10;
+const MAX_TURNDEPTH: u16 = 50;
 const MAX_LOOKAHEAD: u16 = 3;
 const K_LARGEST: u16 = 4;
+var buf: [pkmn.LOGS_SIZE]u8 = undefined;
+var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
+// TODO Create issue on @pkmn/engine for not having to pass options with default values
+var options = pkmn.battle.options(
+    pkmn.protocol.FixedLog{ .writer = stream.writer() },
+    pkmn.gen1.chance.NULL,
+    pkmn.gen1.calc.NULL,
+);
 
 pub const TurnChoices = struct { choices: [2]pkmn.Choice, turn: ?*DecisionNode };
 
@@ -30,13 +38,12 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     // Generates inital starting node to iteratively expand upon
     root = try exhaustive_decision_tree(null, null, starting_battle, starting_result, alloc, 0);
     for (root.?.*.next_turns.items) |next_turn| {
-        next_turn.turn.?.*.score = score(next_turn.turn, next_turn.choices[0]);
+        next_turn.turn.?.*.score = score(next_turn.turn, next_turn.choices);
     }
     std.mem.sort(TurnChoices, root.?.*.next_turns.items, {}, compare_score);
     i = K_LARGEST;
     original_len = root.?.*.next_turns.items.len;
     while (i < original_len) {
-        // Could've broke
         free_tree(root.?.*.next_turns.swapRemove(K_LARGEST).turn, alloc);
         i += 1;
     }
@@ -55,8 +62,9 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
         // Extend leaves of scoring_nodes to maximize depth for scoring
         for (scoring_nodes) |scoring_node| {
             _ = try exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.result, alloc, 0);
+            // Actually scoring children of scoring_node, not the scoring_node itself
             for (scoring_node.?.*.next_turns.items) |potential_node| {
-                potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices[0]);
+                potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices);
                 if (potential_node.turn != null) {
                     try potential_nodes.append(potential_node);
                 }
@@ -113,15 +121,6 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
         new_node.?.*.battle.* = next_battle;
 
         var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-        var buf: [pkmn.LOGS_SIZE]u8 = undefined;
-        var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
-        // TODO Create issue on @pkmn/engine for not having to pass options with default values
-        var options = pkmn.battle.options(
-            pkmn.protocol.FixedLog{ .writer = stream.writer() },
-            pkmn.gen1.chance.NULL,
-            pkmn.gen1.calc.NULL,
-        );
-
         // Create list of possible choices for player to choose from
         const max1 = curr_battle.choices(tools.PLAYER_PID, result.p1, &choices);
         const player_valid_choices = choices[0..max1];
@@ -133,24 +132,13 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
             new_result = try next_battle.update(choice, c2, &options);
             const child_node = try exhaustive_decision_tree(null, new_node, next_battle, new_result, alloc, depth + 1);
             next_battle = curr_battle;
-            try new_node.?.*.next_turns.append(.{
-                .choices = .{ choice, c2 },
-                .turn = child_node,
-            });
+            try new_node.?.*.next_turns.append(.{ .choices = .{ choice, c2 }, .turn = child_node });
         }
         return new_node;
     } else {
         // Skips past previously generated nodes and reaching null leaves
         for (curr_node.?.*.next_turns.items, 0..) |next_turn, i| {
             if (next_turn.turn == null) {
-                var buf: [pkmn.LOGS_SIZE]u8 = undefined;
-                var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
-                // TODO Create issue on @pkmn/engine for not having to pass options with default values
-                var options = pkmn.battle.options(
-                    pkmn.protocol.FixedLog{ .writer = stream.writer() },
-                    pkmn.gen1.chance.NULL,
-                    pkmn.gen1.calc.NULL,
-                );
                 var next_battle = curr_node.?.*.battle.*;
                 const new_result = try next_battle.update(next_turn.choices[0], next_turn.choices[1], &options);
                 curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, new_result, alloc, depth + 1);
@@ -168,7 +156,7 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
         // Spacing between node selections
         print("-" ** 30, .{});
         print("\n", .{});
-        var buf: [10]u8 = undefined;
+        var input_buf: [10]u8 = undefined;
         var traversing: bool = true;
 
         // Selects choices made to get to the current turn
@@ -200,16 +188,20 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
 
         // Takes a single character (u8) for processing next node to follow
         const reader = std.io.getStdIn().reader();
-        if (try reader.readUntilDelimiterOrEof(buf[0..], '\n')) |user_input| {
-            // ASCII range of integers from 1-9
-            if (49 <= user_input[0] and user_input[0] <= 57) {
+        if (try reader.readUntilDelimiterOrEof(input_buf[0..], '\n')) |user_input| {
+            if (user_input.len == @as(usize, 0)) {
+                print("Invalid input!\n", .{});
+                traversing = false;
+            } else if (49 <= user_input[0] and user_input[0] <= 57) { // ASCII range of integers from 1-9
                 const choice_id = try std.fmt.parseInt(u8, user_input, 10);
                 try traverse_decision_tree(curr_node.?.*.next_turns.items[choice_id - 1].turn);
             } else if (user_input[0] == 'c') {
                 try traverse_decision_tree(curr_node.?.*.next_turns.items[0].turn);
             } else if (user_input[0] == 'p') {
                 try traverse_decision_tree(curr_node.?.*.previous_turn);
-            } else if (user_input[0] != 'q') {
+            } else if (user_input[0] == 'q') {
+                traversing = false;
+            } else {
                 print("Invalid input!\n", .{});
                 traversing = false;
             }
@@ -256,26 +248,35 @@ fn compare_score(_: void, n1: TurnChoices, n2: TurnChoices) bool {
     }
 }
 
-fn score(scoring_node: ?*DecisionNode, choice_to_node: pkmn.Choice) u16 {
+fn score(scoring_node: ?*DecisionNode, choices_to_node: [2]pkmn.Choice) u16 {
     var sum: u16 = 0;
 
     const previous_battle = scoring_node.?.*.previous_turn.?.*.battle.*;
     const previous_player_active = previous_battle.side(tools.PLAYER_PID).active;
+    const previous_player_stored = previous_battle.side(tools.PLAYER_PID).stored();
     const previous_enemy_active = previous_battle.side(tools.ENEMY_PID).active;
+    // const previous_enemy_stored = previous_battle.side(tools.ENEMY_PID).stored();
 
     const scoring_battle = scoring_node.?.*.battle.*;
     // const scoring_player_active = scoring_battle.side(tools.PLAYER_PID).active;
     // const scoring_enemy_active  = scoring_battle.side(tools.ENEMY_PID).active;
 
-    if (choice_to_node.type == pkmn.Choice.Type.Move) {
-        sum += 20;
+    if (choices_to_node[0].type == pkmn.Choice.Type.Move) {
+        // STAB
+        const move_type = pkmn.gen1.Move.get(previous_player_stored.move(choices_to_node[0].data).id).type;
+        // const move_name = @tagName(previous_player_stored.move(choices_to_node[0].data).id);
+        if (move_type == previous_player_active.types.type1 or move_type == previous_player_active.types.type2) {
+            sum += 10;
+        }
+
         // Fast Kill
         if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {
             sum += 10;
-            // Fast MultiKill
-            // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
-        } else if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {}
-    } else if (choice_to_node.type == pkmn.Choice.Type.Switch) {} else if (choice_to_node.type == pkmn.Choice.Type.Pass) {
+        }
+        // Fast MultiKill
+        // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
+        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {}
+    } else if (choices_to_node[0].type == pkmn.Choice.Type.Switch) {} else if (choices_to_node[0].type == pkmn.Choice.Type.Pass) {
         sum += 100;
     }
 
