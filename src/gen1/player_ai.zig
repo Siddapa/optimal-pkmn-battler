@@ -1,14 +1,16 @@
 const std = @import("std");
 const print = std.debug.print;
-
 const pkmn = @import("pkmn");
-
 const tools = @import("tools.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
+var alloc: std.mem.Allocator = undefined;
+var box_pokemon: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 const MAX_TURNDEPTH: u16 = 50;
 const MAX_LOOKAHEAD: u16 = 3;
 const K_LARGEST: u16 = 4;
+
+/// Globalized creationg of options for battle updates
 var buf: [pkmn.LOGS_SIZE]u8 = undefined;
 var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
 // TODO Create issue on @pkmn/engine for not having to pass options with default values
@@ -18,17 +20,27 @@ var options = pkmn.battle.options(
     pkmn.gen1.calc.NULL,
 );
 
-pub const TurnChoices = struct { choices: [2]pkmn.Choice, turn: ?*DecisionNode };
+/// Setup
+pub fn init(box: [10]pkmn.gen1.Pokemon, allocator: std.mem.Allocator) void {
+    alloc = allocator;
+    box_pokemon = box;
+}
+pub fn close() void {
+    box_pokemon.deinit();
+}
 
+/// Structs for buliding decision tree
+pub const TurnChoices = struct { choices: [2]pkmn.Choice, turn: ?*DecisionNode };
 pub const DecisionNode = struct {
     battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG) = undefined,
+    team_pokemon: [6]i8,
     result: pkmn.Result,
     score: u16 = 0,
     previous_turn: ?*DecisionNode = null,
     next_turns: std.ArrayList(TurnChoices),
 };
 
-pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), starting_result: pkmn.Result, alloc: std.mem.Allocator) !?*DecisionNode {
+pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), starting_result: pkmn.Result) !?*DecisionNode {
     var root: ?*DecisionNode = undefined;
     var scoring_nodes: [K_LARGEST]?*DecisionNode = undefined;
     var depth: u16 = 0;
@@ -36,7 +48,8 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     var original_len: usize = undefined;
 
     // Generates inital starting node to iteratively expand upon
-    root = try exhaustive_decision_tree(null, null, starting_battle, starting_result, alloc, 0);
+    const starting_team = [_]i8{-1} ** 6;
+    root = try exhaustive_decision_tree(null, null, starting_battle, starting_team, starting_result, 0);
     for (root.?.*.next_turns.items) |next_turn| {
         next_turn.turn.?.*.score = score(next_turn.turn, next_turn.choices);
     }
@@ -44,7 +57,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     i = K_LARGEST;
     original_len = root.?.*.next_turns.items.len;
     while (i < original_len) {
-        free_tree(root.?.*.next_turns.swapRemove(K_LARGEST).turn, alloc);
+        free_tree(root.?.*.next_turns.swapRemove(K_LARGEST).turn);
         i += 1;
     }
     for (root.?.*.next_turns.items, 0..) |next_turn, j| {
@@ -61,7 +74,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 
         // Extend leaves of scoring_nodes to maximize depth for scoring
         for (scoring_nodes) |scoring_node| {
-            _ = try exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.result, alloc, 0);
+            _ = try exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.team_pokemon, scoring_node.?.*.result, 0);
             // Actually scoring children of scoring_node, not the scoring_node itself
             for (scoring_node.?.*.next_turns.items) |potential_node| {
                 potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices);
@@ -88,7 +101,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
                 }
                 j += 1;
             }
-            free_tree(delete_node.turn, alloc);
+            free_tree(delete_node.turn);
             i += 1;
         }
         // Save potential_nodes for next turn's scoring
@@ -99,8 +112,54 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     return root;
 }
 
+fn score(scoring_node: ?*DecisionNode, choices_to_node: [2]pkmn.Choice) u16 {
+    var sum: u16 = 0;
+
+    const previous_battle = scoring_node.?.*.previous_turn.?.*.battle.*;
+    const previous_player_active = previous_battle.side(tools.PLAYER_PID).active;
+    const previous_player_stored = previous_battle.side(tools.PLAYER_PID).stored();
+    const previous_enemy_active = previous_battle.side(tools.ENEMY_PID).active;
+    // const previous_enemy_stored = previous_battle.side(tools.ENEMY_PID).stored();
+
+    const scoring_battle = scoring_node.?.*.battle.*;
+    // const scoring_player_active = scoring_battle.side(tools.PLAYER_PID).active;
+    // const scoring_enemy_active  = scoring_battle.side(tools.ENEMY_PID).active;
+
+    if (choices_to_node[0].type == pkmn.Choice.Type.Move) {
+        // STAB
+        const move_type = pkmn.gen1.Move.get(previous_player_stored.move(choices_to_node[0].data).id).type;
+        // const move_name = @tagName(previous_player_stored.move(choices_to_node[0].data).id);
+        if (move_type == previous_player_active.types.type1 or move_type == previous_player_active.types.type2) {
+            sum += 10;
+        }
+
+        // Fast Kill
+        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {
+            sum += 10;
+        }
+        // Fast MultiKill
+        // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
+        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {}
+    } else if (choices_to_node[0].type == pkmn.Choice.Type.Switch) {} else if (choices_to_node[0].type == pkmn.Choice.Type.Pass) {
+        sum += 100;
+    }
+
+    return sum;
+}
+
+fn compare_score(_: void, n1: TurnChoices, n2: TurnChoices) bool {
+    const n1_score = n1.turn.?.*.score;
+    const n2_score = n2.turn.?.*.score;
+    // TODO What to do when scores are equal
+    if (n1_score > n2_score) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 // TODO Access leaves for extension without recursing from a root node
-fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, alloc: std.mem.Allocator, depth: u16) !?*DecisionNode {
+fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), curr_team: [6]i8, result: pkmn.Result, depth: u16) !?*DecisionNode {
     if (curr_node == null) {
         // Max possible depth to quickly generate is 6
         if (result.type != .None or depth == MAX_LOOKAHEAD) {
@@ -112,28 +171,60 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
 
         // Generate a new node to contain children and also return as child to parent
         const new_node: ?*DecisionNode = alloc.create(DecisionNode) catch unreachable;
+
         new_node.?.* = .{
             .battle = try alloc.create(pkmn.gen1.Battle(pkmn.gen1.PRNG)),
+            .team_pokemon = curr_team,
             .result = result,
             .previous_turn = parent_node,
             .next_turns = std.ArrayList(TurnChoices).init(alloc),
         };
-        new_node.?.*.battle.* = next_battle;
+        new_node.?.*.battle.* = curr_battle;
 
         var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-        // Create list of possible choices for player to choose from
         const max1 = curr_battle.choices(tools.PLAYER_PID, result.p1, &choices);
-        const player_valid_choices = choices[0..max1];
+        const engine_valid_choices = choices[0..max1];
         // Enemy only guaranteed to make one move
-        const c2 = try enemy_ai.pick_choice(curr_battle, result, 0);
+        // TODO Issue #6
+        const enemy_choice = try enemy_ai.pick_choice(curr_battle, result, 0);
 
-        var new_result: pkmn.Result = undefined;
-        for (player_valid_choices) |choice| {
-            new_result = try next_battle.update(choice, c2, &options);
-            const child_node = try exhaustive_decision_tree(null, new_node, next_battle, new_result, alloc, depth + 1);
+        for (engine_valid_choices) |choice| {
+            const new_result: pkmn.Result = try next_battle.update(choice, enemy_choice, &options);
+            const child_node = try exhaustive_decision_tree(null, new_node, next_battle, curr_team, new_result, depth + 1);
             next_battle = curr_battle;
-            try new_node.?.*.next_turns.append(.{ .choices = .{ choice, c2 }, .turn = child_node });
+            try new_node.?.*.next_turns.append(.{ .choices = .{ choice, enemy_choice }, .turn = child_node });
         }
+
+        var team_size: u8 = 0;
+        var new_member_slot: usize = 0;
+        for (curr_team, 0..) |team_member, i| { // Counts the non-negative, valid indexes within the curr_team
+            if (team_member != -1) { // Increment when referencing a valid team member
+                team_size += 1;
+            }
+            if (team_member == -1) { // When first invalid is found, replace with a valid switch
+                new_member_slot = i;
+            }
+        }
+        if (0 <= team_size and team_size < 6) {
+            for (box_pokemon.items, 0..) |box_mon, box_index| {
+                var new_team = curr_team;
+                var in_box: bool = false;
+                for (curr_team) |team_index| { // Is box_mon already on team?
+                    if (box_index == team_index) {
+                        in_box = true;
+                    }
+                }
+                if (!in_box) {
+                    const switch_choice: pkmn.Choice = try add_to_team(&next_battle, result, box_mon, new_member_slot);
+                    const new_result: pkmn.Result = try next_battle.update(switch_choice, enemy_choice, &options);
+                    new_team[new_member_slot] = @intCast(box_index);
+                    const child_node = try exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
+                    next_battle = curr_battle;
+                    try new_node.?.*.next_turns.append(.{ .choices = .{ switch_choice, enemy_choice }, .turn = child_node });
+                }
+            }
+        }
+
         return new_node;
     } else {
         // Skips past previously generated nodes and reaching null leaves
@@ -141,13 +232,28 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
             if (next_turn.turn == null) {
                 var next_battle = curr_node.?.*.battle.*;
                 const new_result = try next_battle.update(next_turn.choices[0], next_turn.choices[1], &options);
-                curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, new_result, alloc, depth + 1);
+                curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, curr_node.?.*.team_pokemon, new_result, depth + 1);
             } else {
-                _ = try exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle.*, curr_node.?.*.result, alloc, depth + 1);
+                _ = try exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle.*, curr_node.?.*.team_pokemon, curr_node.?.*.result, depth + 1);
             }
         }
         return curr_node;
     }
+}
+
+fn add_to_team(battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, new_mon: pkmn.gen1.Pokemon, new_member_slot: usize) !pkmn.Choice {
+    // Things that need to be modified:
+    // 1) Adding to player's side
+    // 2) Updating team order
+    // 3) Returning new choice for battle update
+
+    battle.*.side(tools.PLAYER_PID).pokemon[new_member_slot] = new_mon;
+    battle.*.side(tools.PLAYER_PID).order[new_member_slot] = @intCast(new_member_slot);
+
+    var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    const max1 = battle.choices(tools.PLAYER_PID, result.p1, &choices);
+    print("{any}", .{choices[max1 - 1]});
+    return choices[max1 - 1];
 }
 
 // TODO Rewrite to traverse iteratively, not recursively
@@ -226,59 +332,13 @@ fn get_parent_turnchoice(child_node: ?*DecisionNode) TurnChoices {
     };
 }
 
-fn free_tree(curr_node: ?*DecisionNode, alloc: std.mem.Allocator) void {
+fn free_tree(curr_node: ?*DecisionNode) void {
     for (curr_node.?.*.next_turns.items) |next_turn| {
         if (next_turn.turn != null) {
-            free_tree(next_turn.turn, alloc);
+            free_tree(next_turn.turn);
         }
     }
     curr_node.?.*.next_turns.deinit();
     alloc.destroy(curr_node.?.*.battle);
     alloc.destroy(curr_node.?);
-}
-
-fn compare_score(_: void, n1: TurnChoices, n2: TurnChoices) bool {
-    const n1_score = n1.turn.?.*.score;
-    const n2_score = n2.turn.?.*.score;
-    // TODO What to do when scores are equal
-    if (n1_score > n2_score) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
-fn score(scoring_node: ?*DecisionNode, choices_to_node: [2]pkmn.Choice) u16 {
-    var sum: u16 = 0;
-
-    const previous_battle = scoring_node.?.*.previous_turn.?.*.battle.*;
-    const previous_player_active = previous_battle.side(tools.PLAYER_PID).active;
-    const previous_player_stored = previous_battle.side(tools.PLAYER_PID).stored();
-    const previous_enemy_active = previous_battle.side(tools.ENEMY_PID).active;
-    // const previous_enemy_stored = previous_battle.side(tools.ENEMY_PID).stored();
-
-    const scoring_battle = scoring_node.?.*.battle.*;
-    // const scoring_player_active = scoring_battle.side(tools.PLAYER_PID).active;
-    // const scoring_enemy_active  = scoring_battle.side(tools.ENEMY_PID).active;
-
-    if (choices_to_node[0].type == pkmn.Choice.Type.Move) {
-        // STAB
-        const move_type = pkmn.gen1.Move.get(previous_player_stored.move(choices_to_node[0].data).id).type;
-        // const move_name = @tagName(previous_player_stored.move(choices_to_node[0].data).id);
-        if (move_type == previous_player_active.types.type1 or move_type == previous_player_active.types.type2) {
-            sum += 10;
-        }
-
-        // Fast Kill
-        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {
-            sum += 10;
-        }
-        // Fast MultiKill
-        // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
-        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {}
-    } else if (choices_to_node[0].type == pkmn.Choice.Type.Switch) {} else if (choices_to_node[0].type == pkmn.Choice.Type.Pass) {
-        sum += 100;
-    }
-
-    return sum;
 }

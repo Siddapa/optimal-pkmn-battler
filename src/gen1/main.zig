@@ -1,7 +1,6 @@
 const std = @import("std");
 const print = std.debug.print;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var arena = std.heap.ArenaAllocator.init(gpa.allocator());
 
 const pkmn = @import("pkmn");
 
@@ -33,6 +32,7 @@ pub fn main() !void {
         pkmn.gen1.calc.NULL,
     );
 
+    // Need an empty result and switch ins for generating tree
     const result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
     const root: ?*player_ai.DecisionNode = try player_ai.optimal_decision_tree(battle, result, gpa.allocator());
     try player_ai.traverse_decision_tree(root);
