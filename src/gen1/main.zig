@@ -11,11 +11,6 @@ const enemy_ai = @import("enemy_ai.zig");
 pub fn main() !void {
     var battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
-        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
-        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
-        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
-        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
-        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{.Pound} },
         .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
@@ -34,11 +29,31 @@ pub fn main() !void {
 
     // Need an empty result and switch ins for generating tree
     const result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
-    const root: ?*player_ai.DecisionNode = try player_ai.optimal_decision_tree(battle, result, gpa.allocator());
+
+    const allocator = gpa.allocator();
+    var box_pokemon = std.ArrayList(pkmn.gen1.Pokemon).init(allocator);
+    const box_pokemon_array = [_]pkmn.gen1.helpers.Pokemon{
+        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
+        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
+        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
+        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
+        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
+        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
+    };
+    for (box_pokemon_array) |mon| {
+        try box_pokemon.append(pkmn.gen1.helpers.Pokemon.init(mon));
+    }
+    player_ai.init(box_pokemon, allocator);
+
+    const root: ?*player_ai.DecisionNode = try player_ai.optimal_decision_tree(battle, result);
     try player_ai.traverse_decision_tree(root);
+
+    player_ai.deinit();
+
+    // try random_vs_enemy_ai();
 }
 
-pub fn random_vs_enemy_ai() void {
+pub fn random_vs_enemy_ai() !void {
     var battle = tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
         .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
@@ -77,7 +92,10 @@ pub fn random_vs_enemy_ai() void {
 
         c2 = try enemy_ai.pick_choice(battle, result, 0);
 
-        tools.print_battle(battle, c1, c2);
+        if (result.p1 == pkmn.Choice.Type.Switch) {
+            tools.print_battle(battle, c1, c2);
+            print("\n\n", .{});
+        }
         result = try battle.update(c1, c2, &options);
     }
     print("{}\n", .{result.type});
