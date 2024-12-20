@@ -7,9 +7,9 @@ const enemy_ai = @import("enemy_ai.zig");
 
 var alloc: std.mem.Allocator = undefined;
 var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
-const MAX_TURNDEPTH: u16 = 5;
-const MAX_LOOKAHEAD: u16 = 2;
-const K_LARGEST: u16 = 9;
+const MAX_TURNDEPTH: u16 = 10;
+const MAX_LOOKAHEAD: u16 = 3;
+const K_LARGEST: u16 = 3;
 
 comptime {
     assert(MAX_LOOKAHEAD > 1);
@@ -179,7 +179,6 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
                 }
                 if (!in_box) {
                     const switch_choice: pkmn.Choice = try add_to_team(&next_battle, box_mon, new_member_slot);
-                    print("{any}", .{new_member_slot});
                     const new_result: pkmn.Result = try next_battle.update(switch_choice, enemy_choice, &options);
                     new_team[new_member_slot] = @intCast(box_index);
                     const child_node = try exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
@@ -266,13 +265,10 @@ fn add_to_team(battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG), new_mon: pkmn.gen1.Pok
 
     battle.*.side(tools.PLAYER_PID).pokemon[new_member_slot] = new_mon;
     battle.*.side(tools.PLAYER_PID).order[new_member_slot] = @intCast(new_member_slot + 1);
-    print("{any}\n", .{battle.*.side(tools.PLAYER_PID).order});
 
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     const max = battle.choices(tools.PLAYER_PID, pkmn.Choice.Type.Switch, &choices); // Force result type to be a switch and not anything else
     const valid_choices = choices[0..max];
-    print("{any}\n", .{choices});
-    print("{any}\n", .{valid_choices});
 
     var highest_switch = pkmn.Choice{ .type = pkmn.Choice.Type.Switch, .data = 0 };
     for (valid_choices) |choice| {
@@ -307,15 +303,21 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
         print("\n", .{});
 
         // Displays possible moves/switches as well as traversing to previous nodes/quitting
+        // TODO Don't display next_turns for leaves which have null next_turns
         print("Select one of the following choices: \n", .{});
         for (curr_node.?.*.next_turns.items, 0..) |next_turn, i| {
-            print("{any}\n\n", .{next_turn});
-            if (next_turn.choices[0].type == pkmn.Choice.Type.Move) {
-                print("{}={s}/M ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).stored().move(next_turn.choices[0].data).id), next_turn.turn.?.*.score });
-            } else if (next_turn.choices[0].type == pkmn.Choice.Type.Switch and next_turn.choices[0].data != 42) {
-                print("{}={s}/S ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).get(next_turn.choices[0].data).species), next_turn.turn.?.*.score });
-            } else if (next_turn.choices[0].type == pkmn.Choice.Type.Pass) {
-                print("c=continue, ", .{});
+            if (next_turn.turn != null) {
+                if (next_turn.choices[0].type == pkmn.Choice.Type.Move) {
+                    print("{}={s}/M ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).stored().move(next_turn.choices[0].data).id), next_turn.turn.?.*.score });
+                } else if (next_turn.choices[0].type == pkmn.Choice.Type.Switch and next_turn.choices[0].data != 42) {
+                    if (next_turn.box_switch != null) {
+                        print("{}={s}/S ({}), ", .{ i + 1, @tagName(next_turn.box_switch.?.added_pokemon.species), next_turn.turn.?.*.score });
+                    } else {
+                        print("{}={s}/S ({}), ", .{ i + 1, @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).get(next_turn.choices[0].data).species), next_turn.turn.?.*.score });
+                    }
+                } else if (next_turn.choices[0].type == pkmn.Choice.Type.Pass) {
+                    print("c=continue, ", .{});
+                }
             }
         }
         print("p=previous turn, q=quit\n", .{});
