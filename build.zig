@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     // @pkmn/engine dependency
-    const pkmn = b.dependency("pkmn", .{ .showdown = showdown, .log = log });
+    const pkmn = b.dependency("pkmn", .{ .showdown = showdown, .log = log, .chance = true, .calc = true });
     exe.root_module.addImport("pkmn", pkmn.module("pkmn"));
 
     b.installArtifact(exe);

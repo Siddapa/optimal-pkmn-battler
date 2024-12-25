@@ -8,7 +8,15 @@ const tools = @import("tools.zig");
 const player_ai = @import("player_ai.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
+pub const pkmn_options = pkmn.Options{ .internal = true };
+
 pub fn main() !void {
+    // try optimized_fight();
+
+    try random_vs_enemy_ai();
+}
+
+pub fn optimized_fight() !void {
     var battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -49,25 +57,13 @@ pub fn main() !void {
     try player_ai.traverse_decision_tree(root);
 
     player_ai.deinit();
-
-    // try random_vs_enemy_ai();
 }
 
 pub fn random_vs_enemy_ai() !void {
     var battle = tools.init_battle(&.{
-        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
-        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
-        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
-        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
-        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
-        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
+        .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{.Pound} },
-        .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
-        .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
-        .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
-        .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
-        .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
     });
 
     var prng = std.Random.DefaultPrng.init(2);
@@ -75,9 +71,10 @@ pub fn random_vs_enemy_ai() !void {
 
     var buf: [pkmn.LOGS_SIZE]u8 = undefined;
     var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
+    var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
     var options = pkmn.battle.options(
         pkmn.protocol.FixedLog{ .writer = stream.writer() },
-        pkmn.gen1.chance.NULL,
+        &chance,
         pkmn.gen1.calc.NULL,
     );
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
@@ -92,10 +89,17 @@ pub fn random_vs_enemy_ai() !void {
 
         c2 = try enemy_ai.pick_choice(battle, result, 0);
 
-        if (result.p1 == pkmn.Choice.Type.Switch) {
-            tools.print_battle(battle, c1, c2);
-            print("\n\n", .{});
-        }
+        // tools.print_battle(battle, c1, c2);
+        // print("\n\n", .{});
+
+        const out = std.io.getStdOut().writer();
+        const stats = try pkmn.gen1.calc.transitions(battle, c1, c2, gpa.allocator(), out, .{
+            .durations = options.chance.durations,
+            .cap = true,
+            .seed = 123,
+        });
+        try out.print("{}\n", .{stats.?});
+
         result = try battle.update(c1, c2, &options);
     }
     print("{}\n", .{result.type});

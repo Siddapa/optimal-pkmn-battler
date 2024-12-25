@@ -239,8 +239,10 @@ fn score(scoring_node: ?*DecisionNode, choices_to_node: [2]pkmn.Choice) u16 {
         // Fast MultiKill
         // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
         if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(tools.ENEMY_PID).stored().hp == 0) {}
-    } else if (choices_to_node[0].type == pkmn.Choice.Type.Switch) {} else if (choices_to_node[0].type == pkmn.Choice.Type.Pass) {
-        sum += 100;
+    } else if (choices_to_node[0].type == pkmn.Choice.Type.Switch) {
+        sum += 1000;
+    } else if (choices_to_node[0].type == pkmn.Choice.Type.Pass) {
+        sum += 0;
     }
 
     return sum;
@@ -300,10 +302,8 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
             }
         }
         tools.print_battle(curr_node.?.*.battle.*, c1, c2);
-        print("\n", .{});
 
         // Displays possible moves/switches as well as traversing to previous nodes/quitting
-        // TODO Don't display next_turns for leaves which have null next_turns
         print("Select one of the following choices: \n", .{});
         for (curr_node.?.*.next_turns.items, 0..) |next_turn, i| {
             if (next_turn.turn != null) {
