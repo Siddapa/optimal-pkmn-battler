@@ -1,4 +1,6 @@
 <script>
+    import panzoom from 'panzoom';
+    import PanningDecisionTree from './PanningDecisionTree.svelte';
 </script>
 
 
@@ -17,7 +19,7 @@
     <div class="box" overflow-y=auto>
         <h3>Box</h3>
         <div class="box-container">
-            <img class="box-mon" src="sprites/gen1/mew.PNG">
+            <img class="box-mon" src="sprites/gen1/mew.PNG" alt="Empty Image">
         </div>
     </div>
     <div class="editor">
@@ -64,6 +66,7 @@
     </div>
     <div class = "decision-tree">
         <h3>Decision Tree</h3>
+        <PanningDecisionTree/>
     </div>
 </main>
 
@@ -113,6 +116,18 @@
         padding: 5px;
     }
 
+    canvas {
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        user-select: none;
+        touch-action: none;
+        background-color: #ccc;
+        overscroll-behavior: none;
+        -webkit-user-select: none; /* disable selection/Copy of UIWebView */
+        -webkit-touch-callout: none; /* disable the IOS popup when long-press on a link */
+    }
+
     .editor-inline {
         display: flex;
         flex-direction: row;
@@ -130,4 +145,3 @@
         height: 200px;
     }
 </style>
-
