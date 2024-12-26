@@ -11,9 +11,9 @@ const enemy_ai = @import("enemy_ai.zig");
 pub const pkmn_options = pkmn.Options{ .internal = true };
 
 pub fn main() !void {
-    // try optimized_fight();
+    try optimized_fight();
 
-    try random_vs_enemy_ai();
+    // try random_vs_enemy_ai();
 }
 
 pub fn optimized_fight() !void {
@@ -41,7 +41,6 @@ pub fn optimized_fight() !void {
     const allocator = gpa.allocator();
     var box_pokemon = std.ArrayList(pkmn.gen1.Pokemon).init(allocator);
     const box_pokemon_array = [_]pkmn.gen1.helpers.Pokemon{
-        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
         .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
         .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
         .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },

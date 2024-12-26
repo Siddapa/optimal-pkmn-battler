@@ -8,7 +8,7 @@ const enemy_ai = @import("enemy_ai.zig");
 var alloc: std.mem.Allocator = undefined;
 var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 const MAX_TURNDEPTH: u16 = 10;
-const MAX_LOOKAHEAD: u16 = 3;
+const MAX_LOOKAHEAD: u16 = 2;
 const K_LARGEST: u16 = 3;
 
 comptime {
@@ -76,7 +76,6 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 
     while (depth < MAX_TURNDEPTH) {
         print("Depth: {}\n", .{depth});
-        // try traverse_decision_tree(root);
         // Must be list of TurnChoices to be compatible with compare function for sorting by score
         var potential_nodes = std.ArrayList(TurnChoices).init(alloc);
         defer potential_nodes.deinit();
@@ -86,8 +85,8 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
             _ = try exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.team_pokemon, scoring_node.?.*.result, 0);
             // Actually scoring children of scoring_node, not the scoring_node itself
             for (scoring_node.?.*.next_turns.items) |potential_node| {
-                potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices);
-                if (potential_node.turn != null) {
+                if (potential_node.turn != null) { // Checks for scoring_node not extened (losing or winning turn)
+                    potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices);
                     try potential_nodes.append(potential_node);
                 }
             }
@@ -190,19 +189,18 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
 
         return new_node;
     } else {
-        // Skips past previously generated nodes and reaching null leaves
+        // Skips past previously generated nodes and reaches null leaves
         for (curr_node.?.*.next_turns.items, 0..) |next_turn, i| {
             if (next_turn.turn == null) {
                 var next_battle = curr_node.?.*.battle.*;
-                if (next_turn.box_switch == null) {
-                    const new_result = try next_battle.update(next_turn.choices[0], next_turn.choices[1], &options);
-                    curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, curr_node.?.*.team_pokemon, new_result, depth + 1);
-                } else {
+                var next_choice: pkmn.Choice = next_turn.choices[0];
+                if (next_turn.box_switch != null) {
                     const box_switch = next_turn.box_switch.?;
-                    const switch_choice: pkmn.Choice = try add_to_team(&next_battle, box_switch.added_pokemon, box_switch.order_slot);
-                    const new_result = try next_battle.update(switch_choice, next_turn.choices[1], &options);
-                    curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, curr_node.?.*.team_pokemon, new_result, depth + 1);
+                    // Add new pokemon to team first before generating switch
+                    next_choice = try add_to_team(&next_battle, box_switch.added_pokemon, box_switch.order_slot);
                 }
+                const new_result = try next_battle.update(next_choice, next_turn.choices[1], &options);
+                curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, curr_node.?.*.team_pokemon, new_result, depth + 1);
             } else {
                 _ = try exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle.*, curr_node.?.*.team_pokemon, curr_node.?.*.result, depth + 1);
             }
