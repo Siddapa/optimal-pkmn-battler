@@ -1,0 +1,407 @@
+#!/usr/bin/env node
+'use strict';
+
+const {execFileSync} = require('child_process');
+const crypto = require('crypto');
+const fs = require('fs');
+const https = require('https');
+const os = require('os');
+const path = require('path');
+const {pipeline} = require('stream/promises');
+const tty = require('tty');
+
+const ZIG_VERSION = {major: 0, minor: 11, patch: 0};
+const DEV = ZIG_VERSION.dev ? `-dev.${ZIG_VERSION.dev}` : '';
+const VERSION = `${ZIG_VERSION.major}.${ZIG_VERSION.minor}.${ZIG_VERSION.patch}${DEV}`;
+const INDEX = 'https://ziglang.org/download/index.json';
+const ROOT = path.resolve(__dirname, '..', '..');
+let SILENT = false;
+
+const sh = (cmd, args) => execFileSync(cmd, args, {encoding: 'utf8', cwd: ROOT});
+const log = (...args) => { if (!SILENT) console.log(...args); };
+
+// This is hardly the browser fetch API, but it works for our primitive needs
+const fetch = url => new Promise((resolve, reject) => {
+  let buf = '';
+  const req = https.request(url, res => {
+    if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+    res.on('data', d => {
+      buf += d;
+    });
+    res.on('end', () => resolve(buf));
+  });
+  req.on('error', reject);
+  req.end();
+});
+
+const download = (url, dest, shasum) => new Promise((resolve, reject) => {
+  const req = https.request(url, res => {
+    if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+    if (shasum) {
+      resolve(pipeline(res, async function* (source) {
+        const hash = crypto.createHash('sha256');
+        for await (const chunk of source) {
+          hash.update(chunk);
+          yield chunk;
+        }
+        if (hash.digest('hex') !== shasum) {
+          throw new Error(`SHA-256 hash of Zig tarball from ${url} does not match expected value`);
+        }
+      }, fs.createWriteStream(dest)));
+    } else {
+      resolve(pipeline(res, fs.createWriteStream(dest)));
+    }
+  });
+  req.on('error', reject);
+  req.end();
+});
+
+// If we're on a system without tar or 7zip we need to download 7zip, which requires some hackery
+const unpack7 = (input, output) => new Promise((resolve, reject) => {
+  // If we already have 7zip-min installed we can just used it, otherwise we need to install it
+  try {
+    require.resolve('7zip-min');
+  } catch (err) {
+    if (err.code !== 'MODULE_NOT_FOUND') throw err;
+    log('Installing 7zip-min package locally to unpack the archive...');
+    sh('npm', ['install', '7zip-min', '--no-audit', '--no-save']);
+  }
+
+  // Node won't let us used the package we just installed above before v16 because pain
+  if (+/^v(\d+)/.exec(process.version)[1] < 16) {
+    console.error('The pkmn engine requires Node v16+');
+    process.exit(1);
+  }
+
+  // Actually use 7zip now that we've installed it
+  require('7zip-min').unpack(input, output, err => err ? reject(err) : resolve());
+});
+
+// Unpacking is kind of an unholy abomination because we don't know what tool we're going to use
+const unpack = async (input, output) => {
+  // This is basically a check for "not windows", in which case simply using `tar` will likely work
+  if (!input.endsWith('.zip')) {
+    try {
+      sh('tar', ['xf', input, '-C', output]);
+      return;
+    } catch {
+      log('tar command not found, falling back to 7z');
+    }
+  }
+  // Try to use a 7z binary if we can, and only install 7zip-min as a last resort
+  try {
+    if (input.endsWith('.zip')) {
+      sh('7z', ['x', input, '-o' + output]);
+    } else {
+      // 7z is brain-dead and requires two commands to unpack the .tar.{gz,xz} file
+      const tar = input.slice(0, -3);
+      sh('7z', ['x', input, '-o' + tar]);
+      sh('7z', ['x', tar, '-o' + output]);
+    }
+    return;
+  } catch {
+    if (input.endsWith('.zip')) {
+      await unpack7(input, output);
+    } else {
+      // Sigh... see above
+      const tar = input.slice(0, -3);
+      await unpack7(input, tar);
+      await unpack7(tar, output);
+    }
+  }
+};
+
+const find = zig => {
+  try {
+    const {zig_exe, version} = JSON.parse(sh(zig, ['env']));
+    const [major, minor, patch, dev] = version.split('.').map(n => parseInt(n));
+
+    const compatible = major > ZIG_VERSION.major ||
+      (major >= ZIG_VERSION.major && minor > ZIG_VERSION.minor) ||
+      (major >= ZIG_VERSION.major && minor >= ZIG_VERSION.minor && patch >= ZIG_VERSION.patch &&
+        (!ZIG_VERSION.dev || (dev && dev >= ZIG_VERSION.dev)));
+
+    if (compatible) {
+      log('Found existing compatible Zig executable:', zig_exe);
+      return zig_exe;
+    } else {
+      log(`Existing Zig executable is not compatible (${version} < ${VERSION}):`, zig_exe);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+};
+
+// https://github.com/coilhq/tigerbeetle/blob/main/scripts/install_zig.sh
+const install = async () => {
+  // Is there an existing compatible system Zig executable in the PATH?
+  const system = find('zig');
+  if (system) return system;
+
+  const dir = path.join(ROOT, 'build', 'bin');
+  const zig = path.join(dir, 'zig', 'zig');
+
+  // Has a previous version of this script installed a compatible version locally?
+  if (find(zig)) return zig;
+
+  const arch = process.arch === 'x64'
+    ? 'x86_64' : process.arch === 'arm64'
+      ? 'aarch64' : process.arch;
+  const platform = process.platform === 'darwin'
+    ? 'macos' : process.platform === 'win32'
+      ? 'windows' : process.platform;
+
+  try {
+    await fs.promises.rm(dir, {recursive: true});
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  try {
+    fs.mkdirSync(dir, {recursive: true});
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+
+  const index = JSON.parse(await fetch(INDEX));
+  // TODO: ziglang/zig#17768
+  // const version = Object.keys(index)[+!ZIG_VERSION.dev];
+  const version = VERSION;
+  const release = index[VERSION][`${arch}-${platform}`];
+  const url = release.tarball;
+
+  let base = path.basename(url);
+  const archive = path.join(dir, path.basename(url));
+
+  log(`Downloading Zig tarball from ${url} to ${archive}`);
+  try {
+    await download(url, archive, release.shasum);
+
+    log(`Extracting tarball and installing to ${dir}`);
+    await unpack(archive, dir);
+    if (archive.endsWith('.zip')) {
+      base = base.slice(0, -4);
+    } else {
+      base = base.slice(0, -7);
+    }
+
+    fs.renameSync(path.join(dir, base), path.join(dir, 'zig'));
+
+    try {
+      fs.chmodSync(zig, 0o755);
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+    log(`Zig${version === 'master' ? '' : ` v${version}`} executable:`, zig,
+      '(this version of Zig will be retained to speed up future updates)');
+    const [pre, post] = tty.isatty(1) ? ['\x1b[1m\x1b[35m', '\x1b[0m'] : ['', ''];
+    log(
+      `${pre}Consider moving the ${path.dirname(zig)} directory and adding it to your PATH`,
+      `to use Zig on other projects, or delete this if you wish to save space.${post}`
+    );
+
+    return zig;
+  } finally {
+    log(`Cleaning up ${archive}`);
+    try { fs.rmSync(archive); } catch {}
+  }
+};
+
+// https://github.com/coilhq/tigerbeetle-node/blob/main/scripts/download_node_headers.sh
+const downloadHeaders = async () => {
+  const include = path.resolve(process.execPath, '..', '..', 'include', 'node');
+  if (fs.existsSync(path.join(include, 'node.h'))) {
+    log('Node headers:', include);
+    return include;
+  }
+
+  const dir = path.join(ROOT, 'build', 'include');
+  const dest = path.join(dir, 'node');
+  if (fs.existsSync(path.join(dest, 'node.h'))) {
+    log('Node headers:', dest);
+    return dest;
+  } else {
+    log(`Could not find Node headers at ${include}, downloading...`);
+  }
+
+  try {
+    fs.mkdirSync(dir, {recursive: true});
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+
+  const url = process.release.headersUrl;
+  const targz = path.join(dir, path.basename(url));
+  const unpacked = path.join(dir, `node-${process.version}`, 'include');
+
+  log(`Downloading Node headers from ${url} to ${targz}`);
+
+  try {
+    await download(url, targz);
+    await unpack(targz, dir);
+    fs.renameSync(path.join(unpacked, 'node'), dest);
+
+    log('Node headers:', dest);
+
+    return dest;
+  } finally {
+    try { fs.rmSync(targz); } catch {}
+    try { fs.rmSync(unpacked, {recursive: true}); } catch {}
+  }
+};
+
+const downloadImportLib = async () => {
+  const library = path.resolve(process.execPath, '..', 'node.lib');
+  if (fs.existsSync(path.join(library, 'node.h'))) {
+    log('Node import library:', library);
+    return library;
+  }
+
+  const dir = path.join(ROOT, 'build', 'lib');
+  const url = process.release.libUrl;
+  const dest = path.join(dir, path.basename(url));
+  if (fs.existsSync(path.join(dest))) {
+    log('Node import library:', dest);
+    return dest;
+  } else {
+    log(`Could not find Node import library at ${library}, downloading...`);
+  }
+
+  try {
+    fs.mkdirSync(dir, {recursive: true});
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+
+  log(`Downloading Node import library from ${url} to ${dest}`);
+  await download(url, dest);
+  log('Node import library:', dest);
+
+  return dest;
+};
+
+(async () => {
+  let only = false;
+  let options = undefined;
+  let error = false;
+  for (let i = 2; i < process.argv.length; i++) {
+    switch (process.argv[i]) {
+      case "--silent": {
+        SILENT = true;
+        break;
+      }
+      case "--zig": {
+        if (options || only) error = true;
+        only = true;
+        break;
+      }
+      default: {
+        if (options || only || !process.argv[i].startsWith('--options=')) error = true;
+        options = process.argv[i].slice(10).split(' ');
+      }
+    }
+  }
+  if (error) {
+    console.error('Invalid arguments');
+    process.exit(1);
+  }
+
+  const zig = await install();
+  if (only) process.exit(0);
+
+  let tmp;
+  try {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pkmn-'));
+  } catch {
+    console.error('Unable to create temporary directory');
+    process.exit(1);
+  }
+
+  // Determine which configurations to build based on prior runs (see below for
+  // if there were no previous runs) - try to build the same configurations as
+  // before (unless --options overridden). We also track whether any of the
+  // configurations require Node headers/import libraries
+  let node = false;
+  const configs = new Map();
+  const libs = path.join(ROOT, 'build', 'lib');
+  if (fs.existsSync(libs)) {
+    for (const file of fs.readdirSync(libs)) {
+      if (!file.startsWith('pkmn')) continue;
+      const type = path.extname(file).slice(1);
+      if (type !== 'node' && type !== 'wasm') continue;
+      // If we don't copy the addon before loading it Windows will return an
+      // EBUSY error when we later attempt to clobber it (Linux and macOS don't
+      // seem to care)
+      const copy = path.join(tmp, file);
+      fs.copyFileSync(path.join(libs, file), copy);
+
+      const opts = options || [];
+      if (type === 'node') {
+        node = true;
+        if (!options) {
+          const addon = require(copy);
+          if (addon.engine.options.showdown) opts.push('-Dshowdown');
+          if (addon.engine.options.log) opts.push('-Dlog');
+          if (addon.engine.options.chance) opts.push('-Dchance');
+          if (addon.engine.options.calc) opts.push('-Dcalc');
+        }
+      } else if (!options) {
+        const addon = await WebAssembly.instantiate(fs.readFileSync(copy));
+        const values = new Uint8Array(addon.instance.exports.memory.buffer);
+        if (values[addon.instance.exports.SHOWDOWN.value]) opts.push('-Dshowdown');
+        if (values[addon.instance.exports.LOG.value]) opts.push('-Dlog');
+        if (values[addon.instance.exports.CHANCE.value]) opts.push('-Dchance');
+        if (values[addon.instance.exports.CALC.value]) opts.push('-Dcalc');
+      }
+      const key = `${type} ${opts.sort().join(' ')}`;
+      if (!configs.has(key)) configs.set(key, {type, options: opts});
+    }
+  }
+
+  // If there haven't been any builds, build both a Node and WASM extension with
+  // either the default options or whatever was passed in
+  if (!configs.size) {
+    node = true;
+    const DEFAULT = ['-Dshowdown'];
+    configs.set('node', {type: 'node', options: options || DEFAULT});
+    configs.set('wasm', {type: 'wasm', options: options || DEFAULT});
+  }
+
+  const headers = node ? await downloadHeaders() : undefined;
+  const lib = node && process.platform === 'win32' ? await downloadImportLib() : undefined;
+  for (const config of configs.values()) {
+    const opts = config.options.filter(Boolean);
+    const args = ['build', '-p', 'build', ...opts];
+    if (!process.env.DEBUG_PKMN_ENGINE) args.push('-Doptimize=ReleaseFast', '-Dstrip');
+    if (config.type === 'node') {
+      args.push(`-Dnode-headers=${path.relative(ROOT, headers)}`);
+      if (process.platform === 'win32') {
+        args.push(`-Dnode-import-library=${path.relative(ROOT, lib)}`);
+      }
+    } else {
+      args.push('-Dwasm');
+    }
+    const suffix =
+      opts.includes('-Dshowdown') || opts.includes('-Dshowdown=true') ? '-showdown' : '';
+    const flags = opts.length ? ` (${opts.join(' ')})` : '';
+    const artifact = path.join('build', 'lib', `pkmn${suffix}.${config.type}`);
+    log(`Building ${artifact}${flags}`);
+    sh(zig, args);
+    // TODO: ziglang/zig#14647 broke emit_to so we get to rename the file ourselves...
+    if (config.type === 'node') {
+      const prefix = process.platform === 'win32' ? '' : 'lib';
+      const ext = process.platform === 'darwin'
+        ? 'dylib' : process.platform === 'win32' ? 'dll' : 'so';
+      try {
+        const actual = path.join(ROOT, 'build', 'lib', `${prefix}pkmn${suffix}.node.${ext}`);
+        fs.renameSync(actual, artifact);
+      } catch {
+        // ziglang/zig#19743 changed this path
+        const actual = path.join(ROOT, 'build', 'bin', `${prefix}pkmn${suffix}.node.${ext}`);
+        fs.renameSync(actual, artifact);
+      }
+    }
+  }
+})().catch(e => {
+  console.error(e);
+  process.exit(1);
+});

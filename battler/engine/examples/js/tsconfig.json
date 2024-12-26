@@ -1,0 +1,10 @@
+{
+  "exclude": ["vite.config.mts"],
+  "compilerOptions": {
+    "downlevelIteration": true,
+    "outDir": "build",
+    "rootDir": ".",
+    "sourceMap": true,
+    "strict": true
+  }
+}
