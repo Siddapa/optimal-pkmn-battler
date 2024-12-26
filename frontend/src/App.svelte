@@ -1,47 +1,133 @@
 <script>
-  import svelteLogo from './assets/svelte.svg'
-  import viteLogo from '/vite.svg'
-  import Counter from './lib/Counter.svelte'
 </script>
 
-<main>
-  <div>
-    <a href="https://vite.dev" target="_blank" rel="noreferrer">
-      <img src={viteLogo} class="logo" alt="Vite Logo" />
-    </a>
-    <a href="https://svelte.dev" target="_blank" rel="noreferrer">
-      <img src={svelteLogo} class="logo svelte" alt="Svelte Logo" />
-    </a>
-  </div>
-  <h1>Vite + Svelte</h1>
 
-  <div class="card">
-    <Counter />
-  </div>
-
-  <p>
-    Check out <a href="https://github.com/sveltejs/kit#readme" target="_blank" rel="noreferrer">SvelteKit</a>, the official Svelte app framework powered by Vite!
-  </p>
-
-  <p class="read-the-docs">
-    Click on the Vite and Svelte logos to learn more
-  </p>
+<main class="container">
+    <div class="settings">
+        <h3>Settings</h3>
+    </div>
+    <div class="import">
+        <h3>Hello</h3>
+        <form method="POST">
+            <input class="import-input" type="text" align="left">
+            <br>
+            <input value="Import Box" class="import-submit" type="submit">
+        </form>
+    </div>
+    <div class="box" overflow-y=auto>
+        <h3>Box</h3>
+        <div class="box-container">
+            <img class="box-mon" src="sprites/gen1/mew.PNG">
+        </div>
+    </div>
+    <div class="editor">
+        <h3>Editor</h3>
+        <div class="editor-inline">
+            <h5>Type: </h5>
+            <select max-height=10px>
+                <option value="None">-</option>
+                <option value="Normal">Normal</option>
+                <option value="Fire">Fire</option>
+                <option value="Water">Water</option>
+                <option value="Electric">Electric</option>
+                <option value="Grass">Grass</option>
+                <option value="Ice">Ice</option>
+                <option value="Fighting">Fighting</option>
+                <option value="Poison">Poison</option>
+                <option value="Ground">Ground</option>
+                <option value="Flying">Fighting</option>
+                <option value="Psychic">Psychic</option>
+                <option value="Bug">Bug</option>
+                <option value="Rock">Rock</option>
+                <option value="Ghost">Ghost</option>
+                <option value="Dragon">Dragon</option>
+            </select>
+            <select max-height=10px>
+                <option value="None">-</option>
+                <option value="Normal">Normal</option>
+                <option value="Fire">Fire</option>
+                <option value="Water">Water</option>
+                <option value="Electric">Electric</option>
+                <option value="Grass">Grass</option>
+                <option value="Ice">Ice</option>
+                <option value="Fighting">Fighting</option>
+                <option value="Poison">Poison</option>
+                <option value="Ground">Ground</option>
+                <option value="Flying">Fighting</option>
+                <option value="Psychic">Psychic</option>
+                <option value="Bug">Bug</option>
+                <option value="Rock">Rock</option>
+                <option value="Ghost">Ghost</option>
+                <option value="Dragon">Dragon</option>
+            </select>
+        </div>
+    </div>
+    <div class = "decision-tree">
+        <h3>Decision Tree</h3>
+    </div>
 </main>
 
+
 <style>
-  .logo {
-    height: 6em;
-    padding: 1.5em;
-    will-change: filter;
-    transition: filter 300ms;
-  }
-  .logo:hover {
-    filter: drop-shadow(0 0 2em #646cffaa);
-  }
-  .logo.svelte:hover {
-    filter: drop-shadow(0 0 2em #ff3e00aa);
-  }
-  .read-the-docs {
-    color: #888;
-  }
+    .container {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        grid-column-gap: 100px;
+        grid-row-gap: 0px;
+    }
+    .container > div {
+        min-width: 300px;
+        min-height: 300px;
+    }
+
+    .settings {
+        grid-area: 1 / 1 / 2 / 2;
+    }
+    .import {
+        grid-area: 1 / 2 / 2 / 3;
+    }
+    .box {
+        width: fit-content;
+        grid-area: 2 / 1 / 3 / 2;
+    }
+    .editor {
+        grid-area: 2 / 2 / 3 / 3;
+    }
+    .decision-tree {
+        grid-area: 1 / 3 / 3 / 4;
+    }
+
+    .box-container {
+        display: grid;
+        grid-template-columns: auto auto auto auto auto auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+        height: 300px;
+        width: 500px;
+        background-image: url("backgrounds/beach.png");
+        background-size: cover;
+        border: 3px solid blue;
+        grid-row-gap: 10px;
+        grid-column-gap: 10px;
+        padding: 5px;
+    }
+
+    .editor-inline {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        width: fit-content;
+        column-gap: 10px;
+    }
+
+    .box-mon {
+        mix-blend-mode: multiply;
+    }
+
+    .import-input {
+        width: 200px;
+        height: 200px;
+    }
 </style>
+
