@@ -1,12 +1,35 @@
 <script>
-    import panzoom from 'panzoom';
     import PanningDecisionTree from './PanningDecisionTree.svelte';
+
+    const greet = async () => {
+        const response = await fetch("gen1.wasm");
+        const buffer = await response.arrayBuffer();
+        const wasm_battler = WebAssembly.instantiate(buffer, {});
+        console.log(response);
+        console.log(wasm_battler);
+        return wasm_battler.instance.exports.greet;
+    };
+
+    // var greet;
+    // const request = new XMLHttpRequest();
+    // request.open("GET", "gen1.wasm");
+    // request.responseType = "arraybuffer";
+    // request.send();
+
+    // request.onload = () => {
+    //     const bytes = request.response;
+    //     console.log(bytes);
+    //     WebAssembly.instantiate(bytes, {}).then((results) => {
+    //         greet = results.instance.exports.greet;
+    //     });
+    // };
 </script>
 
 
 <main class="container">
     <div class="settings">
         <h3>Settings</h3>
+        <h2>{greet()}</h2>
     </div>
     <div class="import">
         <h3>Hello</h3>

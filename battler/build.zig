@@ -5,11 +5,12 @@ pub fn build(b: *std.Build) !void {
     const generation = b.option([]const u8, "generation", "Specify which generation") orelse "gen1";
     const showdown = b.option(bool, "showdown", "Enable Pokémon Showdown compatibility mode") orelse false;
     const log = b.option(bool, "log", "Enable protocol message logging") orelse false;
+
     var target = b.standardTargetOptions(.{});
     if (wasm) {
         target = b.resolveTargetQuery(.{
             .cpu_arch = .wasm32,
-            .os_tag = .wasi,
+            .os_tag = .freestanding,
         });
     }
 
@@ -19,9 +20,14 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path(try std.fmt.bufPrint(&filename_buf, "src/{s}/main.zig", .{generation})),
         // Release Small is double the speed of ReleaseFast but both are under 0.1s
         // with MAX_DEPTH = 50, LOOKAHEAD = 3, and K_LARGEST = 4
-        .optimize = .Debug,
+        .optimize = .ReleaseSmall,
         .target = target,
     });
+
+    if (wasm) {
+        exe.rdynamic = true;
+        exe.entry = .disabled;
+    }
 
     // @pkmn/engine dependency
     const pkmn = b.dependency("pkmn", .{ .showdown = showdown, .log = log, .chance = true, .calc = true });

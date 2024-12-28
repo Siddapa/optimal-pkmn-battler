@@ -16,6 +16,10 @@ pub fn main() !void {
     // try random_vs_enemy_ai();
 }
 
+export fn greet() u32 {
+    return 10;
+}
+
 pub fn optimized_fight() !void {
     var battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
