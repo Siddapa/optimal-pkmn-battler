@@ -1,53 +1,6 @@
 <script src="main.js">
     import PanningDecisionTree from './PanningDecisionTree.svelte';
-    import { WASI } from "@runno/wasi";
-
-
-    async function tester() {
-        const result = WASI.start(fetch("/gen1.wasm"), {
-            args: [],
-            env: {},
-            stdout: (out) => console.log("stdout", out),
-            stderr: (err) => console.log("stderr", err),
-            stdin: () => prompt("stdin:"),
-            fs: {},
-        });
-    }
     
-
-    async function generate_decision_tree() {
-        const wasi = new WASI({
-            args: [],
-            env: {},
-            stdout: (out) => console.log("stdout", out),
-            stdin: () => prompt("stdin:"),
-            fs: {},
-        });
-        const myMemory = new WebAssembly.Memory({ initial: 32, maximum: 1000 });
-        const wasm = await WebAssembly.instantiateStreaming(fetch("gen1.wasm"), {
-            ...wasi.getImportObject(),
-            env: {},
-        });
-        const result = wasi.start(wasm, {});
-
-        console.log(wasm.instance.exports.blah());
-
-        const { generateOptimizedDecisionTree, getNodeSpecies, memory } = wasm.instance.exports;
-        const root = generateOptimizedDecisionTree();
-        console.log(root);
-
-        const speciesStr = fetchString(memory, root, 0, getNodeSpecies);
-        console.log(speciesStr);
-    }
-
-    function fetchString(memory, root, start_index, func) {
-        const strLength = func(root, true, start_index); // 0 is pointer for top of memory.buffer
-        const outputView = new Uint8Array(memory.buffer, 0, strLength);
-        return new TextDecoder().decode(outputView);
-    }
-
-
-    generate_decision_tree();
     // const { memory, getOptimizedDecisionTree, getNodeSpecies, allocBytes, freeBytes, processValues } = generate_decision_tree();
 
     // const values_len = 10;

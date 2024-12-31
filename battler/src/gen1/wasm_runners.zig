@@ -54,13 +54,32 @@ export fn generateOptimizedDecisionTree() ?*player_ai.DecisionNode {
     return root;
 }
 
-export fn getNodeSpecies(curr_node: ?*player_ai.DecisionNode, player: bool, out: [*]u8) usize {
-    var species_str: [:0]const u8 = undefined;
-    if (player) {
-        species_str = @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).stored().species);
-    } else {
-        species_str = @tagName(curr_node.?.*.battle.side(tools.ENEMY_PID).stored().species);
+export fn getNextNode(curr_node: ?*player_ai.DecisionNode, index: usize) ?*player_ai.DecisionNode {
+    // TODO Check valid...index,
+    if (curr_node) |valid_curr_node| {
+        if (valid_curr_node.next_turns.items[index].turn) |valid_next_turn| {
+            return valid_next_turn;
+        }
+        return null;
     }
+    return null;
+}
+
+export fn getNumOfNextTurns(curr_node: ?*player_ai.DecisionNode) usize {
+    if (curr_node) |valid_curr_node| {
+        return valid_curr_node.*.next_turns.items.len;
+    }
+    return 0;
+}
+
+export fn getPlayerSpecies(curr_node: ?*player_ai.DecisionNode, out: [*]u8) usize {
+    const species_str: [:0]const u8 = @tagName(curr_node.?.*.battle.side(tools.PLAYER_PID).stored().species);
+    @memcpy(out, species_str);
+    return species_str.len;
+}
+
+export fn getEnemySpecies(curr_node: ?*player_ai.DecisionNode, out: [*]u8) usize {
+    const species_str: [:0]const u8 = @tagName(curr_node.?.*.battle.side(tools.ENEMY_PID).stored().species);
     @memcpy(out, species_str);
     return species_str.len;
 }

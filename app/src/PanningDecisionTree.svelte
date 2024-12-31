@@ -1,27 +1,117 @@
 <script>
+    import { WASI } from "@runno/wasi";
     import { onMount } from "svelte";
+    
+    let exports;
+    let zigRoot;
+    let canvasRoot;
+
+    async function run_wasm() {
+        const wasi = new WASI({
+            args: [],
+            env: {},
+            stdout: (out) => console.log("stdout", out),
+            // Removed stderr printing
+            stdin: () => prompt("stdin:"),
+            fs: {},
+        });
+        const wasm = await WebAssembly.instantiateStreaming(
+            fetch("gen1.wasm"), {
+            ...wasi.getImportObject(),
+            env: {},
+        });
+        const result = wasi.start(wasm, {});
+
+        exports = wasm.instance.exports;
+        zigRoot = exports.generateOptimizedDecisionTree()
+    }
+
+    const generateCanvasTree = (zigNode, depth) => {
+        const playerSpecies = fetchString(exports.memory, exports.getPlayerSpecies(zigNode, 0));
+        const enemySpecies = fetchString(exports.memory, exports.getEnemySpecies(zigNode, 0));
+
+        var currCanvasNode = new CanvasNode(
+            zigNode,
+            0,
+            0,
+            playerSpecies,
+            enemySpecies,
+            depth
+        );
+
+        const numOfNextTurns = exports.getNumOfNextTurns(zigNode);
+
+        for (let i = 0; i < numOfNextTurns; i++) {
+            const nextNode = exports.getNextNode(zigNode, i);
+            if (nextNode != 0) { // 0 pointers are null decision nodes
+                const childCanvasNode = generateCanvasTree(nextNode, depth + 1);
+                currCanvasNode.addChild(childCanvasNode);
+            }
+        }
+
+        return currCanvasNode;
+    }
+
+    function fetchString(memory, strLength) {
+        const outputView = new Uint8Array(memory.buffer, 0, strLength);
+        return new TextDecoder().decode(outputView);
+    }
+
 
     let canvas;
     let ctx;
+
     let isPanning = false;
     let startX, startY;
     let offsetX = 0, offsetY = 0;
     let scale = 1;
     let lastScale = 1;
 
-    const draw = () => {
-        if (ctx) {
-            // Clear the canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const canvasWidth = "800";
+    const canvasLength = "1500";
+    const nodeWidth = 50;
+    const nodeHeight = 50;
 
-            // Draw something, for example, a rectangle or any shape
-            ctx.save();
-            ctx.translate(offsetX, offsetY);
-            ctx.fillStyle = 'skyblue';
-            ctx.fillRect(50, 50, 200, 150); // Example shape
-            ctx.restore();
+    class CanvasNode {
+        constructor(decisionNode, x, y, playerSpecies, enemySpecies, depth) {
+            this.decisionNode = decisionNode;
+            this.data = {
+                'playerSpecies': playerSpecies,
+                'enemySpecies': enemySpecies,
+            }
+            this.x = x;
+            this.y = y;
+            this.children = [];
+            this.parent = null;
+            this.depth = depth;
         }
-    };
+
+        addChild(decisionNode) {
+            decisionNode.depth = this.depth + 1;
+            this.children.push(decisionNode);
+            decisionNode.parent = this;
+        }
+
+        draw(chlid_num, total_children) {
+            const top_left_x = (canvasWidth / 2) - (nodeWidth / 2);
+            const top_left_y = 50 + (this.depth * 50);
+            console.log(top_left_x, top_left_y);
+            ctx.fillRect(top_left_x, top_left_y, top_left_x + nodeWidth, top_left_y + nodeHeight);
+            for (let i = 0; i < this.children.length; i++) {
+                this.children[i].draw();
+            }
+        }
+    }
+
+    const drawCanvas = () => {
+        canvasRoot = generateCanvasTree(zigRoot, 0);
+        ctx.clearRect(0, 0, canvasWidth, canvasLength);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.fillStyle = 'green';
+        canvasRoot.draw();
+        ctx.restore();
+    }
 
     const startPan = (e) => {
         isPanning = true;
@@ -35,7 +125,7 @@
         const deltaY = e.clientY - startY;
         offsetX = deltaX;
         offsetY = deltaY;
-        draw();
+        drawCanvas();
     };
 
     const endPan = () => {
@@ -48,36 +138,37 @@
         const newScale = scale + (e.deltaY > 0 ? -zoomFactor : zoomFactor);
         if (newScale > 0.1 && newScale < 10) {
             scale = newScale;
-            draw();
+            drawCanvas();
         }
     };
 
-    onMount(() => {
+    onMount(async () => {
         ctx = canvas.getContext('2d');
-        draw();
+        await run_wasm();
     });
 </script>
 
 <style>
-canvas {
-    border: 1px solid #ccc;
-    cursor: grab;
-}
-canvas:active {
-    cursor: grabbing;
-}
+    canvas {
+        border: 1px solid #ccc;
+        cursor: grab;
+    }
+    canvas:active {
+        cursor: grabbing;
+    }
 </style>
 
 <div
-    on:mousedown={startPan}
-    on:mousemove={pan}
-    on:mouseup={endPan}
-    on:mouseleave={endPan}>
+    onmousedown={startPan}
+    onmousemove={pan}
+    onmouseup={endPan}
+    onmouseleave={endPan}>
+    <input type="button" value="Generate Tree" onclick={drawCanvas}/>
     <canvas
         bind:this={canvas}
-        width="800"
-        height="1500"
-        on:wheel={zoom}
+        width={canvasWidth}
+        height={canvasLength}
+        onwheel={zoom}
         style="width: 100%; height: 100%; touch-action: none;"
     ></canvas>
 </div>
