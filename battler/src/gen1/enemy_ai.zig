@@ -26,7 +26,7 @@ const SwitchData = struct {
 /// Provides categories for move selection
 /// @arg(good_ai) should be enabled when facing certain trainers
 /// TODO Track number of turns on field in main loop
-pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) !pkmn.Choice {
+pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) pkmn.Choice {
     const allocator = gpalloc.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     const player_side: *const pkmn.gen1.Side = battle.side(tools.PLAYER_PID);
@@ -64,10 +64,10 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
                 if (priority < min_priority) {
                     min_priority = priority;
                 }
-                try choice_priorities.append(.{
+                choice_priorities.append(.{
                     .choice = choice,
                     .priority = priority,
-                });
+                }) catch continue;
             }
         }
         var minimal_priority_choices = std.ArrayList(u8).init(gpalloc.allocator());
@@ -75,7 +75,7 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
         // Search through choice_priorities and find the minimal ones
         for (choice_priorities.items, 0..) |choice_data, i| {
             if (choice_data.priority == min_priority) {
-                try minimal_priority_choices.append(@intCast(i));
+                minimal_priority_choices.append(@intCast(i)) catch continue;
             }
         }
         // TODO Look into whether rejection sampling matters

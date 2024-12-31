@@ -1,35 +1,74 @@
-<script>
+<script src="main.js">
     import PanningDecisionTree from './PanningDecisionTree.svelte';
+    import { WASI } from "@runno/wasi";
 
-    const greet = async () => {
-        const response = await fetch("gen1.wasm");
-        const buffer = await response.arrayBuffer();
-        const wasm_battler = WebAssembly.instantiate(buffer, {});
-        console.log(response);
-        console.log(wasm_battler);
-        return wasm_battler.instance.exports.greet;
-    };
 
-    // var greet;
-    // const request = new XMLHttpRequest();
-    // request.open("GET", "gen1.wasm");
-    // request.responseType = "arraybuffer";
-    // request.send();
+    async function tester() {
+        const result = WASI.start(fetch("/gen1.wasm"), {
+            args: [],
+            env: {},
+            stdout: (out) => console.log("stdout", out),
+            stderr: (err) => console.log("stderr", err),
+            stdin: () => prompt("stdin:"),
+            fs: {},
+        });
+    }
+    
 
-    // request.onload = () => {
-    //     const bytes = request.response;
-    //     console.log(bytes);
-    //     WebAssembly.instantiate(bytes, {}).then((results) => {
-    //         greet = results.instance.exports.greet;
-    //     });
-    // };
+    async function generate_decision_tree() {
+        const wasi = new WASI({
+            args: [],
+            env: {},
+            stdout: (out) => console.log("stdout", out),
+            stdin: () => prompt("stdin:"),
+            fs: {},
+        });
+        const myMemory = new WebAssembly.Memory({ initial: 32, maximum: 1000 });
+        const wasm = await WebAssembly.instantiateStreaming(fetch("gen1.wasm"), {
+            ...wasi.getImportObject(),
+            env: {},
+        });
+        const result = wasi.start(wasm, {});
+
+        console.log(wasm.instance.exports.blah());
+
+        const { generateOptimizedDecisionTree, getNodeSpecies, memory } = wasm.instance.exports;
+        const root = generateOptimizedDecisionTree();
+        console.log(root);
+
+        const speciesStr = fetchString(memory, root, 0, getNodeSpecies);
+        console.log(speciesStr);
+    }
+
+    function fetchString(memory, root, start_index, func) {
+        const strLength = func(root, true, start_index); // 0 is pointer for top of memory.buffer
+        const outputView = new Uint8Array(memory.buffer, 0, strLength);
+        return new TextDecoder().decode(outputView);
+    }
+
+
+    generate_decision_tree();
+    // const { memory, getOptimizedDecisionTree, getNodeSpecies, allocBytes, freeBytes, processValues } = generate_decision_tree();
+
+    // const values_len = 10;
+    // const values_ptr = allocBytes(values_len * Int32Array.BYTES_PER_ELEMENT);
+    // // Address 0 isn't protected in wasm so don't forget to check for null!
+    // if (values_ptr === 0) {
+    //     throw new Error("OOM")
+    // }
+    // try {
+    //     const values = new Int32Array(memory.buffer, values_ptr, values_len);
+    //     for (let i = 0; i < values_len; i++) values[i] = 2 * i - 6;
+    //     processValues(values_ptr, values_len);
+    // } finally {
+    //     freeBytes(values_ptr, values_len * Int32Array.BYTES_PER_ELEMENT)
+    // }
 </script>
 
 
 <main class="container">
     <div class="settings">
         <h3>Settings</h3>
-        <h2>{greet()}</h2>
     </div>
     <div class="import">
         <h3>Hello</h3>

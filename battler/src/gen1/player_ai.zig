@@ -36,12 +36,12 @@ pub fn deinit() void {
 
 /// Structs for buliding decision tree
 pub const DecisionNode = struct {
-    battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG),
-    team_pokemon: [6]i8,
+    battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
+    team_pokemon: [6]i8 = [_]i8{0} ** 6,
     result: pkmn.Result,
     score: u16 = 0,
     previous_turn: ?*DecisionNode = null,
-    next_turns: std.ArrayList(TurnChoices),
+    next_turns: std.ArrayList(TurnChoices) = undefined,
 };
 pub const TurnChoices = struct { choices: [2]pkmn.Choice, turn: ?*DecisionNode, box_switch: ?BoxSwitch };
 pub const BoxSwitch = struct {
@@ -49,7 +49,7 @@ pub const BoxSwitch = struct {
     order_slot: usize,
 };
 
-pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), starting_result: pkmn.Result) !?*DecisionNode {
+pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), starting_result: pkmn.Result) ?*DecisionNode {
     var root: ?*DecisionNode = undefined;
     var scoring_nodes: [K_LARGEST]?*DecisionNode = undefined;
     var depth: u16 = 0;
@@ -58,7 +58,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 
     // Generates inital starting node to iteratively expand upon
     const starting_team = [_]i8{ 0, -1, -1, -1, -1, -1 };
-    root = try exhaustive_decision_tree(null, null, starting_battle, starting_team, starting_result, 0);
+    root = exhaustive_decision_tree(null, null, starting_battle, starting_team, starting_result, 0);
     for (root.?.*.next_turns.items) |next_turn| {
         next_turn.turn.?.*.score = score(next_turn.turn, next_turn.choices);
     }
@@ -82,12 +82,12 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 
         // Extend leaves of scoring_nodes to maximize depth for scoring
         for (scoring_nodes) |scoring_node| {
-            _ = try exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.team_pokemon, scoring_node.?.*.result, 0);
+            _ = exhaustive_decision_tree(scoring_node, null, starting_battle, scoring_node.?.*.team_pokemon, scoring_node.?.*.result, 0);
             // Actually scoring children of scoring_node, not the scoring_node itself
             for (scoring_node.?.*.next_turns.items) |potential_node| {
                 if (potential_node.turn != null) { // Checks for scoring_node not extened (losing or winning turn)
                     potential_node.turn.?.*.score = score(potential_node.turn, get_parent_turnchoice(potential_node.turn).choices);
-                    try potential_nodes.append(potential_node);
+                    potential_nodes.append(potential_node) catch continue;
                 }
             }
         }
@@ -121,7 +121,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 }
 
 // TODO Access leaves for extension without recursing from a root node
-fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), curr_team: [6]i8, result: pkmn.Result, depth: u16) !?*DecisionNode {
+fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), curr_team: [6]i8, result: pkmn.Result, depth: u16) ?*DecisionNode {
     if (curr_node == null) {
         // Max possible depth to quickly generate is 6
         if (result.type != .None or depth == MAX_LOOKAHEAD) {
@@ -135,26 +135,25 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
         const new_node: ?*DecisionNode = alloc.create(DecisionNode) catch unreachable;
 
         new_node.?.* = .{
-            .battle = try alloc.create(pkmn.gen1.Battle(pkmn.gen1.PRNG)), // TODO No need to dynamically allocate
+            .battle = curr_battle, // TODO No need to dynamically allocate
             .team_pokemon = curr_team,
             .result = result,
             .previous_turn = parent_node,
             .next_turns = std.ArrayList(TurnChoices).init(alloc),
         };
-        new_node.?.*.battle.* = curr_battle;
 
         var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
         const max1 = curr_battle.choices(tools.PLAYER_PID, result.p1, &choices);
         const engine_valid_choices = choices[0..max1];
         // Enemy only guaranteed to make one move
         // TODO Issue #6
-        const enemy_choice = try enemy_ai.pick_choice(curr_battle, result, 0);
+        const enemy_choice = enemy_ai.pick_choice(curr_battle, result, 0);
 
         for (engine_valid_choices) |choice| {
-            const new_result: pkmn.Result = try next_battle.update(choice, enemy_choice, &options);
-            const child_node = try exhaustive_decision_tree(null, new_node, next_battle, curr_team, new_result, depth + 1);
+            const new_result: pkmn.Result = next_battle.update(choice, enemy_choice, &options) catch pkmn.Result{};
+            const child_node = exhaustive_decision_tree(null, new_node, next_battle, curr_team, new_result, depth + 1);
             next_battle = curr_battle;
-            try new_node.?.*.next_turns.append(.{ .choices = .{ choice, enemy_choice }, .turn = child_node, .box_switch = null });
+            new_node.?.*.next_turns.append(.{ .choices = .{ choice, enemy_choice }, .turn = child_node, .box_switch = null }) catch continue;
         }
 
         var team_size: u8 = 0;
@@ -177,12 +176,12 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
                     }
                 }
                 if (!in_box) {
-                    const switch_choice: pkmn.Choice = try add_to_team(&next_battle, box_mon, new_member_slot);
-                    const new_result: pkmn.Result = try next_battle.update(switch_choice, enemy_choice, &options);
+                    const switch_choice: pkmn.Choice = add_to_team(&next_battle, box_mon, new_member_slot);
+                    const new_result: pkmn.Result = next_battle.update(switch_choice, enemy_choice, &options) catch pkmn.Result{};
                     new_team[new_member_slot] = @intCast(box_index);
-                    const child_node = try exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
+                    const child_node = exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
                     next_battle = curr_battle;
-                    try new_node.?.*.next_turns.append(.{ .choices = .{ switch_choice, enemy_choice }, .turn = child_node, .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot } });
+                    new_node.?.*.next_turns.append(.{ .choices = .{ switch_choice, enemy_choice }, .turn = child_node, .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot } }) catch continue;
                 }
             }
         }
@@ -192,17 +191,17 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
         // Skips past previously generated nodes and reaches null leaves
         for (curr_node.?.*.next_turns.items, 0..) |next_turn, i| {
             if (next_turn.turn == null) {
-                var next_battle = curr_node.?.*.battle.*;
+                var next_battle = curr_node.?.*.battle;
                 var next_choice: pkmn.Choice = next_turn.choices[0];
                 if (next_turn.box_switch != null) {
                     const box_switch = next_turn.box_switch.?;
                     // Add new pokemon to team first before generating switch
-                    next_choice = try add_to_team(&next_battle, box_switch.added_pokemon, box_switch.order_slot);
+                    next_choice = add_to_team(&next_battle, box_switch.added_pokemon, box_switch.order_slot);
                 }
-                const new_result = try next_battle.update(next_choice, next_turn.choices[1], &options);
-                curr_node.?.*.next_turns.items[i].turn = try exhaustive_decision_tree(null, curr_node, next_battle, curr_node.?.*.team_pokemon, new_result, depth + 1);
+                const new_result = next_battle.update(next_choice, next_turn.choices[1], &options) catch pkmn.Result{};
+                curr_node.?.*.next_turns.items[i].turn = exhaustive_decision_tree(null, curr_node, next_battle, curr_node.?.*.team_pokemon, new_result, depth + 1);
             } else {
-                _ = try exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle.*, curr_node.?.*.team_pokemon, curr_node.?.*.result, depth + 1);
+                _ = exhaustive_decision_tree(next_turn.turn, curr_node, curr_node.?.*.battle, curr_node.?.*.team_pokemon, curr_node.?.*.result, depth + 1);
             }
         }
         return curr_node;
@@ -212,13 +211,13 @@ fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNo
 fn score(scoring_node: ?*DecisionNode, choices_to_node: [2]pkmn.Choice) u16 {
     var sum: u16 = 0;
 
-    const previous_battle = scoring_node.?.*.previous_turn.?.*.battle.*;
+    const previous_battle = scoring_node.?.*.previous_turn.?.*.battle;
     const previous_player_active = previous_battle.side(tools.PLAYER_PID).active;
     const previous_player_stored = previous_battle.side(tools.PLAYER_PID).stored();
     const previous_enemy_active = previous_battle.side(tools.ENEMY_PID).active;
     // const previous_enemy_stored = previous_battle.side(tools.ENEMY_PID).stored();
 
-    const scoring_battle = scoring_node.?.*.battle.*;
+    const scoring_battle = scoring_node.?.*.battle;
     // const scoring_player_active = scoring_battle.side(tools.PLAYER_PID).active;
     // const scoring_enemy_active  = scoring_battle.side(tools.ENEMY_PID).active;
 
@@ -257,7 +256,7 @@ fn compare_score(_: void, n1: TurnChoices, n2: TurnChoices) bool {
     }
 }
 
-fn add_to_team(battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG), new_mon: pkmn.gen1.Pokemon, new_member_slot: usize) !pkmn.Choice {
+fn add_to_team(battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG), new_mon: pkmn.gen1.Pokemon, new_member_slot: usize) pkmn.Choice {
     // Things that need to be modified:
     // 1) Adding to player's side
     // 2) Updating team order
@@ -299,7 +298,7 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
                 }
             }
         }
-        tools.print_battle(curr_node.?.*.battle.*, c1, c2);
+        tools.print_battle(curr_node.?.*.battle, c1, c2);
 
         // Displays possible moves/switches as well as traversing to previous nodes/quitting
         print("Select one of the following choices: \n", .{});
@@ -368,6 +367,5 @@ fn free_tree(curr_node: ?*DecisionNode) void {
         }
     }
     curr_node.?.*.next_turns.deinit();
-    alloc.destroy(curr_node.?.*.battle);
     alloc.destroy(curr_node.?);
 }

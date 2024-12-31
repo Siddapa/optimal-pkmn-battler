@@ -10,14 +10,14 @@ pub fn build(b: *std.Build) !void {
     if (wasm) {
         target = b.resolveTargetQuery(.{
             .cpu_arch = .wasm32,
-            .os_tag = .freestanding,
+            .os_tag = .wasi,
         });
     }
 
     var filename_buf = [_]u8{undefined} ** 100;
     const exe = b.addExecutable(.{
         .name = generation,
-        .root_source_file = b.path(try std.fmt.bufPrint(&filename_buf, "src/{s}/main.zig", .{generation})),
+        .root_source_file = b.path(try std.fmt.bufPrint(&filename_buf, "src/{s}/wasm_runners.zig", .{generation})),
         // Release Small is double the speed of ReleaseFast but both are under 0.1s
         // with MAX_DEPTH = 50, LOOKAHEAD = 3, and K_LARGEST = 4
         .optimize = .ReleaseSmall,

@@ -48,3 +48,50 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
 
     return battle;
 }
+
+pub fn random_vs_enemy_ai() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var battle = init_battle(&.{
+        .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
+    }, &.{
+        .{ .species = .Pidgey, .moves = &.{.Pound} },
+    });
+
+    var prng = std.Random.DefaultPrng.init(2);
+    var random = prng.random();
+
+    var buf: [pkmn.LOGS_SIZE]u8 = undefined;
+    var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
+    var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
+    var options = pkmn.battle.options(
+        pkmn.protocol.FixedLog{ .writer = stream.writer() },
+        &chance,
+        pkmn.gen1.calc.NULL,
+    );
+    var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+
+    var c1 = pkmn.Choice{};
+    var c2 = pkmn.Choice{};
+    var result = try battle.update(c1, c2, &options);
+    while (result.type == .None) {
+        const max1 = battle.choices(.P1, result.p1, &choices);
+        const n1 = random.uintLessThan(u8, max1);
+        c1 = choices[n1];
+
+        c2 = try enemy_ai.pick_choice(battle, result, 0);
+
+        // tools.print_battle(battle, c1, c2);
+        // print("\n\n", .{});
+
+        const out = std.io.getStdOut().writer();
+        const stats = try pkmn.gen1.calc.transitions(battle, c1, c2, gpa.allocator(), out, .{
+            .durations = options.chance.durations,
+            .cap = true,
+            .seed = 123,
+        });
+        try out.print("{}\n", .{stats.?});
+
+        result = try battle.update(c1, c2, &options);
+    }
+    print("{}\n", .{result.type});
+}
