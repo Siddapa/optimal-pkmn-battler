@@ -69,6 +69,8 @@
 
     const canvasWidth = "800";
     const canvasLength = "1500";
+    const topPadding = 50;
+    const sidePadding = 25;
     const nodeWidth = 50;
     const nodeHeight = 50;
 
@@ -92,13 +94,19 @@
             decisionNode.parent = this;
         }
 
-        draw(chlid_num, total_children) {
-            const top_left_x = (canvasWidth / 2) - (nodeWidth / 2);
-            const top_left_y = 50 + (this.depth * 50);
-            console.log(top_left_x, top_left_y);
-            ctx.fillRect(top_left_x, top_left_y, top_left_x + nodeWidth, top_left_y + nodeHeight);
-            for (let i = 0; i < this.children.length; i++) {
-                this.children[i].draw();
+        draw(sibilingIndex, numOfSiblings) {
+            console.log(sibilingIndex, numOfSiblings);
+            const trueWidth = canvasWidth - (sidePadding * 2)
+            var topLeftX = sidePadding + Math.floor(trueWidth / numOfSiblings) * (sibilingIndex - 1);
+            if (numOfSiblings == 0) {
+                topLeftX = sidePadding + Math.floor(trueWidth / 2) * (sibilingIndex - 1)
+            }
+            const topLeftY = topPadding + (this.depth * 50) + (this.depth * 10);
+            console.log(topLeftX, topLeftY);
+            ctx.fillRect(topLeftX, topLeftY, nodeWidth, nodeHeight);
+            const childrenLength = this.children.length;
+            for (let i = 0; i < childrenLength; i++) {
+                this.children[i].draw(i, childrenLength);
             }
         }
     }
@@ -109,7 +117,7 @@
         ctx.save();
         ctx.translate(offsetX, offsetY);
         ctx.fillStyle = 'green';
-        canvasRoot.draw();
+        canvasRoot.draw(0, 0);
         ctx.restore();
     }
 
@@ -144,6 +152,8 @@
 
     onMount(async () => {
         ctx = canvas.getContext('2d');
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
         await run_wasm();
     });
 </script>

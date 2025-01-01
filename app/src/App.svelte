@@ -1,21 +1,5 @@
 <script src="main.js">
     import PanningDecisionTree from './PanningDecisionTree.svelte';
-    
-    // const { memory, getOptimizedDecisionTree, getNodeSpecies, allocBytes, freeBytes, processValues } = generate_decision_tree();
-
-    // const values_len = 10;
-    // const values_ptr = allocBytes(values_len * Int32Array.BYTES_PER_ELEMENT);
-    // // Address 0 isn't protected in wasm so don't forget to check for null!
-    // if (values_ptr === 0) {
-    //     throw new Error("OOM")
-    // }
-    // try {
-    //     const values = new Int32Array(memory.buffer, values_ptr, values_len);
-    //     for (let i = 0; i < values_len; i++) values[i] = 2 * i - 6;
-    //     processValues(values_ptr, values_len);
-    // } finally {
-    //     freeBytes(values_ptr, values_len * Int32Array.BYTES_PER_ELEMENT)
-    // }
 </script>
 
 
@@ -113,6 +97,8 @@
         grid-area: 2 / 2 / 3 / 3;
     }
     .decision-tree {
+        height: fit-content;
+        width: fit-content;
         grid-area: 1 / 3 / 3 / 4;
     }
 
@@ -133,8 +119,6 @@
 
     canvas {
         box-sizing: border-box;
-        width: 100%;
-        height: 100%;
         user-select: none;
         touch-action: none;
         background-color: #ccc;
