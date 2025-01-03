@@ -8,7 +8,12 @@
                 <option value="Packed">Packed</option>
                 <option value="JSON">JSON</option>
             </select>
-            <textarea class="import-input" rows="15" cols="10" bind:this={playerImport}></textarea>
+            <textarea class="import-input" rows="15" cols="12" bind:this={playerImport}></textarea>
+            <br>
+            {#each invalidPlayerImports as alert}
+                <span class="invalid-import">{alert['species']} is not within this generation!</span>
+                <br>
+            {/each}
         </div>
         <div class="import">
             <select bind:this={enemyFormat}>
@@ -17,6 +22,11 @@
                 <option value="JSON">JSON</option>
             </select>
             <textarea class="import-input" rows="15" cols="10" bind:this={enemyImport}></textarea>
+            <br>
+            {#each invalidEnemyImports as alert}
+                <span class="invalid-import">{alert['species']} is not within this generation!</span>
+                <br>
+            {/each}
         </div>
     </div>
     <input type="submit" value="Import Boxes" onclick={submitImport}>
@@ -29,12 +39,22 @@
     let playerFormat;
     let enemyImport;
     let enemyFormat;
+    let invalidPlayerImports = $state([]);
+    let invalidEnemyImports = $state([]);
 
-    const submitImport = () => {
+    const submitImport = async () => {
         if (playerImport.value != "") {
             if (playerFormat.value == "Normal") {
+                $playerBox = [];
                 $playerBox = normalToJson(playerImport.value);
-                console.log($playerBox);
+                const promises = $playerBox.map(async (pokemon) => ({
+                    valid: await validateBox(pokemon),
+                    value: pokemon
+                }));
+                const resolvedBox = await Promise.all(promises);
+                const validPlayerBox = resolvedBox.filter(validity => validity.valid).map(pokemon => pokemon.value);
+                invalidPlayerImports = $playerBox.filter(x => !validPlayerBox.includes(x));
+                $playerBox = validPlayerBox;
             } else if (playerFormat.value == "Packed") {
                 // TODO
             }
@@ -46,6 +66,14 @@
         if (enemyImport.value != "") {
             if (enemyFormat.value == "Normal") {
                 $enemyBox = normalToJson(enemyImport.value);
+                const promises = $enemyBox.map(async (pokemon) => ({
+                    valid: await validateBox(pokemon),
+                    value: pokemon
+                }));
+                const resolvedBox = await Promise.all(promises);
+                const validEnemyBox = resolvedBox.filter(validity => validity.valid).map(pokemon => pokemon.value);
+                invalidEnemyImports = $enemyBox.filter(x => !validEnemyBox.includes(x));
+                $enemyBox = validEnemyBox;
             } else if (enemyformat.value == "Packed") {
                 // TODO
             }
@@ -118,14 +146,24 @@
     function packedToJSON() {
 
     }
+
+    async function validateBox(pokemon) {
+        const contentType = await fetch("sprites/gen1/" + pokemon['species'].toLowerCase() + ".PNG")
+                                  .then((response) => Object.fromEntries(response.headers))
+                                  .then((headers) => headers["content-type"]);
+
+        if (contentType == "image/png") {
+            return true
+        }
+        return false;
+    }
 </script>
 
 <style>
     .imports-container {
         display: flex;
         flex-direction: row;
-        padding: 0px;
-        margin: 0px;
+        column-gap: 5px;
         width: fit-content;
     }
     .import {
@@ -135,5 +173,10 @@
 
     .import-input {
         resize: none;
+    }
+
+    .invalid-import {
+        color: red;
+        font-size: 0.75em;
     }
 </style>

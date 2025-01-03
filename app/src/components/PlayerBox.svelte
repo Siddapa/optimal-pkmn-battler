@@ -2,7 +2,7 @@
     <h3>Player Box</h3>
     <div class="box-container">
         {#each $playerBox as pokemon}
-            <img class="box-mon" src="sprites/gen1/{pokemon['species'].toLowerCase()}.PNG" alt="Empty Image">
+            <img class="box-mon" src="sprites/gen1/{pokemon['species'].toLowerCase()}.PNG">
         {/each}
     </div>
 </div>
