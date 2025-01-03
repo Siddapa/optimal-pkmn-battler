@@ -1,8 +1,8 @@
 <div>
     <h3>Editor</h3>
-    <div class="editor-inline">
-        <h5>Type: </h5>
-        <select max-height=10px>
+    <div class="types">
+        <b>Type:</b>
+        <select class="type">
             <option value="None">-</option>
             <option value="Normal">Normal</option>
             <option value="Fire">Fire</option>
@@ -20,7 +20,7 @@
             <option value="Ghost">Ghost</option>
             <option value="Dragon">Dragon</option>
         </select>
-        <select max-height=10px>
+        <select class="type">
             <option value="None">-</option>
             <option value="Normal">Normal</option>
             <option value="Fire">Fire</option>
@@ -42,11 +42,11 @@
 </div>
 
 <style>
-    .editor-inline {
+    .types {
         display: flex;
+        grid-area: repeat(3, 1fr);
         flex-direction: row;
-        flex-wrap: wrap;
-        width: fit-content;
         column-gap: 10px;
+        max-height: 50px;
     }
 </style>

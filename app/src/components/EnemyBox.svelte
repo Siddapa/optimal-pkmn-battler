@@ -1,9 +1,15 @@
 <div>
-    <h3>Box</h3>
+    <h3>Enemy Box</h3>
     <div class="box-container">
-        <img class="box-mon" src="sprites/gen1/mew.PNG" alt="Empty Image">
+        {#each $enemyBox as pokemon}
+            <img class="box-mon" src="sprites/gen1/{pokemon['species'].toLowerCase()}.PNG" alt="Empty Image">
+        {/each}
     </div>
 </div>
+
+<script>
+    import { enemyBox } from '../stores.js';
+</script>
 
 <style>
     .box-container {
@@ -12,10 +18,10 @@
         overflow-y: auto;
         overflow-x: hidden;
         height: 300px;
-        width: 500px;
+        width: 200px;
         background-image: url("backgrounds/beach.png");
         background-size: cover;
-        border: 3px solid white;
+        border: 2px solid white;
         grid-row-gap: 10px;
         grid-column-gap: 10px;
         padding: 5px;

@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const mvzr = @import("mvzr");
 
 const pkmn = @import("pkmn");
 const tools = @import("tools.zig");
@@ -52,6 +53,15 @@ export fn generateOptimizedDecisionTree() ?*player_ai.DecisionNode {
     player_ai.deinit();
 
     return root;
+}
+
+export fn importPlayerPokemon(imports: [*]u8, size: u32) void {
+    var lines = std.mem.splitScalar(u8, imports[0..size], '\n');
+
+    print("{}\n", .{lines});
+    while (lines.next()) |line| {
+        print("{s}\n", .{line});
+    }
 }
 
 export fn getNextNode(curr_node: ?*player_ai.DecisionNode, index: usize) ?*player_ai.DecisionNode {

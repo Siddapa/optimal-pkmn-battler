@@ -1,34 +1,14 @@
 <script>
-    import { WASI } from "@runno/wasi";
     import { onMount } from "svelte";
     import { DataSet, Network } from "vis-network/standalone";
+    import { wasmExports } from '../stores.js';
 
-    let exports;
     let zigRoot;
 
     let network;
     var nodes = new DataSet([]);
     var edges = new DataSet([]);
     let graphID = 0;
-
-    async function runWASM() {
-        const wasi = new WASI({
-            args: [],
-            env: {},
-            stdout: (out) => console.log("stdout", out),
-            // Removed stderr printing
-            stdin: () => prompt("stdin:"),
-            fs: {},
-        });
-        const wasm = await WebAssembly.instantiateStreaming(
-            fetch("gen1.wasm"), {
-                ...wasi.getImportObject(),
-                env: {},
-            });
-        const result = wasi.start(wasm, {});
-
-        exports = wasm.instance.exports;
-    }
 
     function fetchString(memory, strLength) {
         const outputView = new Uint8Array(memory.buffer, 0, strLength);
@@ -44,7 +24,7 @@
         var options = {
             layout: {
                 hierarchical: {
-                    direction: "UD",
+                    direction: "DU",
                 },
             },
             width: "500px",
@@ -56,7 +36,7 @@
     const updateGraph = () => {
         nodes.clear();
         edges.clear();
-        zigRoot = exports.generateOptimizedDecisionTree()
+        zigRoot = $wasmExports.generateOptimizedDecisionTree()
 
         populateDecisionGraph(zigRoot);
         
@@ -69,9 +49,9 @@
         nodes.add([{id: currNodeID, label: graphNodeLabel(zigNode), zigNode: zigNode}]);
         graphID += 1;
 
-        const numOfNextTurns = exports.getNumOfNextTurns(zigNode);
+        const numOfNextTurns = $wasmExports.getNumOfNextTurns(zigNode);
         for (let i = 0; i < numOfNextTurns; i++) {
-            const nextNode = exports.getNextNode(zigNode, i);
+            const nextNode = $wasmExports.getNextNode(zigNode, i);
             if (nextNode != 0) { // 0 pointers are null decision nodes
                 const childNodeID = populateDecisionGraph(nextNode, nodes, edges);
                 edges.add([{from: currNodeID, to: childNodeID, arrows: "to"}])
@@ -82,13 +62,12 @@
     }
 
     function graphNodeLabel(zigNode) {
-        return fetchString(exports.memory, exports.getPlayerSpecies(zigNode, 0)) + 
+        return fetchString($wasmExports.memory, $wasmExports.getPlayerSpecies(zigNode, 0)) + 
                '\nvs\n' + 
-               fetchString(exports.memory, exports.getEnemySpecies(zigNode, 0));
+               fetchString($wasmExports.memory, $wasmExports.getEnemySpecies(zigNode, 0));
     }
 
     onMount(() => {
-        runWASM();
         initGraph();
     });
 </script>
