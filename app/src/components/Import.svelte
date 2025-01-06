@@ -43,6 +43,7 @@
     let invalidEnemyImports = $state([]);
 
     const submitImport = async () => {
+        $wasmExports.close();
         if (playerImport.value != "") {
             if (playerFormat.value == "Normal") {
                 $playerBox = [];
@@ -58,13 +59,11 @@
             } else if (playerFormat.value == "Packed") {
                 // TODO
             }
-            // const memoryView = new Uint8Array($wasmExports.memory.buffer);
-            // const { size } = new TextEncoder().encodeInto(playerImport.value, memoryView);
-            // $wasmExports.importPlayerPokemon(0, size);
         }
         
         if (enemyImport.value != "") {
             if (enemyFormat.value == "Normal") {
+                $enemyBox = [];
                 $enemyBox = normalToJson(enemyImport.value);
                 const promises = $enemyBox.map(async (pokemon) => ({
                     valid: await validateBox(pokemon),
@@ -78,68 +77,95 @@
                 // TODO
             }
         }
+        
+        for (const pokemon of $playerBox) {
+            const memoryView = new Uint8Array($wasmExports.memory.buffer);
+            const { written } = new TextEncoder().encodeInto(JSON.stringify(pokemon), memoryView);
+            $wasmExports.importPokemon(0, written, true);
+        }
+        for (const pokemon of $enemyBox) {
+            const memoryView = new Uint8Array($wasmExports.memory.buffer);
+            const { written } = new TextEncoder().encodeInto(JSON.stringify(pokemon), memoryView);
+            $wasmExports.importPokemon(0, written, false);
+        }
+        
     }
 
     function normalToJson(importTeam) {
         var lines = importTeam.split("\n");
         const numOfLines = lines.length;
         var box = [];
-        var newPokemon = {"name": ""};
+        var newPokemon = {
+            "species": "",
+            "dvs": {
+                "atk": 0,
+                "def": 0,
+                "spc": 0,
+                "spe": 0
+            },
+            "evs": {
+                "hp": 0,
+                "atk": 0,
+                "def": 0,
+                "spc": 0,
+                "spe": 0
+            }
+        };
         for (let i = 0; i < numOfLines; i++) {
-            const line = lines[i]
+            const line = lines[i];
 
-            const species_item = line.match(/([\'\w\s-]+) @ ([\w\s-]+)/);
-            const species_gender_item = line.match(/([\'\(\)\w\s-]+) \(([M|F])\) @ ([\w\s-]+)/);
-            const ability = line.match(/Ability: ([\w\s-]+)/);
+            const species_item = line.match(/^([\'\w\s-]+)/);
             const ivs = line.match(/IVs: (.+)/);
             const evs = line.match(/EVs: (.+)/);
-            const nature = line.match(/([\w\s-]+) Nature/);
             const move = line.match(/- ([\w\s-]+)/);
 
-            if (species_item) {
-                newPokemon["species"] = species_item[1];
-                newPokemon["item"] = species_item[2].trim();
-            } else if (species_gender_item) {
-                newPokemon["species"] = species_gender_item[1];
-                newPokemon["gender"] = species_gender_item[2];
-                newPokemon["item"] = species_gender_item[3].trim();
-            } else if (ability) {
-                newPokemon["ability"] = ability[1].trim();
-            } else if (ivs) {
-                const perStat = ivs[1].matchAll(/(\d+) (\w+)/g);
-                const numOfStats = perStat.length;
-                var ivsJson = {};
-                for (let j = 0; j < numOfStats; j++) {
-                    const value = perStat[j][1];
-                    const stat = perStat[j][2];
-                    newPokemon["ivs"][value.toLower()] = stat;
+            if (ivs) {
+                const stats = ivs[1].matchAll(/(\d+) (\w+)/g);
+                for (const stat of stats) {
+                    const value = stat[1];
+                    const name = stat[2];
+                    newPokemon["dvs"][name.toLowerCase()] = Number(value);
                 }
             } else if (evs) {
-                const perStat = evs[1].matchAll(/(\d+) (\w+)/g);
-                const numOfStats = perStat.length;
-                var evsJson = {};
-                for (let j = 0; j < numOfStats; j++) {
-                    const value = perStat[j][1];
-                    const stat = perStat[j][2];
-                    newPokemon["evs"][value.toLower()] = stat;
+                const stats = evs[1].matchAll(/(\d+) (\w+)/g);
+                for (const stat of stats) {
+                    const value = stat[1];
+                    const name = stat[2];
+                    newPokemon["evs"][name.toLowerCase()] = Number(value);
                 }
-            } else if (nature) {
-                newPokemon["nature"] = nature[1];
             } else if (move) {
                 if (!newPokemon["moves"]) {
                     newPokemon["moves"] = [];
                 }
                 newPokemon["moves"].push(move[1].trim());
+            } else if (species_item) {
+                newPokemon["species"] = species_item[1];
             } else {
                 if (newPokemon["species"]) {
                     box.push(newPokemon);
                 }
-                newPokemon = {"name": ""};
+                newPokemon = {
+                    "species": "",
+                    "dvs": {
+                        "atk": 0,
+                        "def": 0,
+                        "spc": 0,
+                        "spe": 0
+                    },
+                    "evs": {
+                        "hp": 0,
+                        "atk": 0,
+                        "def": 0,
+                        "spc": 0,
+                        "spe": 0
+                    }
+                };
             }
         }
         if (newPokemon["species"]) {
             box.push(newPokemon);
         }
+        console.log(box);
         return box;
     }
 
@@ -153,7 +179,7 @@
                                   .then((headers) => headers["content-type"]);
 
         if (contentType == "image/png") {
-            return true
+            return true;
         }
         return false;
     }

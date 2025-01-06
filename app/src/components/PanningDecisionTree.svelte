@@ -24,7 +24,12 @@
         var options = {
             layout: {
                 hierarchical: {
-                    direction: "DU",
+                    direction: "UD",
+                },
+            },
+            edges: {
+                smooth: {
+                    forceDirection: "vertical"
                 },
             },
             width: "500px",
@@ -36,24 +41,24 @@
     const updateGraph = () => {
         nodes.clear();
         edges.clear();
+        network.redraw();
         zigRoot = $wasmExports.generateOptimizedDecisionTree()
 
-        populateDecisionGraph(zigRoot);
+        populateDecisionGraph(zigRoot, 0);
         
         network.redraw();
     }
 
-    const populateDecisionGraph = (zigNode) => {
+    const populateDecisionGraph = (zigNode, depth) => {
         const currNodeID = graphID;
-        console.log(currNodeID);
-        nodes.add([{id: currNodeID, label: graphNodeLabel(zigNode), zigNode: zigNode}]);
+        nodes.add([{id: currNodeID, level: depth, label: graphNodeLabel(zigNode, depth), zigNode: zigNode}]);
         graphID += 1;
 
         const numOfNextTurns = $wasmExports.getNumOfNextTurns(zigNode);
         for (let i = 0; i < numOfNextTurns; i++) {
             const nextNode = $wasmExports.getNextNode(zigNode, i);
             if (nextNode != 0) { // 0 pointers are null decision nodes
-                const childNodeID = populateDecisionGraph(nextNode, nodes, edges);
+                const childNodeID = populateDecisionGraph(nextNode, depth + 1);
                 edges.add([{from: currNodeID, to: childNodeID, arrows: "to"}])
             }
         }
@@ -61,10 +66,10 @@
         return currNodeID;
     }
 
-    function graphNodeLabel(zigNode) {
-        return fetchString($wasmExports.memory, $wasmExports.getPlayerSpecies(zigNode, 0)) + 
+    function graphNodeLabel(zigNode, depth) {
+        return fetchString($wasmExports.memory, $wasmExports.getPlayerSpecies(zigNode, 0)) + " (" + String($wasmExports.getPlayerHP(zigNode)) + ")" +
                '\nvs\n' + 
-               fetchString($wasmExports.memory, $wasmExports.getEnemySpecies(zigNode, 0));
+               fetchString($wasmExports.memory, $wasmExports.getEnemySpecies(zigNode, 0)) + " (" + String($wasmExports.getEnemyHP(zigNode)) + ")";
     }
 
     onMount(() => {

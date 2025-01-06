@@ -3,13 +3,15 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 var prng = std.Random.DefaultPrng.init(1);
 var rand = prng.random();
-var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
+var alloc: std.mem.Allocator = undefined;
 
 const pkmn = @import("pkmn");
 const Move = pkmn.gen1.Move;
 const effects = Move.Effect;
 
 const tools = @import("tools.zig");
+
+pub var team: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 
 const MoveData = struct {
     choice: pkmn.Choice,
@@ -22,12 +24,20 @@ const SwitchData = struct {
     index: u8,
 };
 
+pub fn init(allocator: std.mem.Allocator) void {
+    alloc = allocator;
+    team = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
+}
+
+pub fn close() void {
+    team.deinit();
+}
+
 /// http://wiki.pokemonspeedruns.com/index.php/Pok%C3%A9mon_Red/Blue/Yellow_Trainer_AI
 /// Provides categories for move selection
 /// @arg(good_ai) should be enabled when facing certain trainers
 /// TODO Track number of turns on field in main loop
 pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) pkmn.Choice {
-    const allocator = gpalloc.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     const player_side: *const pkmn.gen1.Side = battle.side(tools.PLAYER_PID);
     const enemy_side: *const pkmn.gen1.Side = battle.side(tools.ENEMY_PID);
@@ -41,7 +51,7 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
         return valid_choices[0];
     }
 
-    var choice_priorities = std.ArrayList(MoveData).init(allocator);
+    var choice_priorities = std.ArrayList(MoveData).init(alloc);
     defer choice_priorities.deinit();
     const bottom_choice = valid_choices[valid_choices.len - 1];
     if (bottom_choice.type == pkmn.Choice.Type.Move and bottom_choice.data != 0) {
@@ -70,7 +80,7 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
                 }) catch continue;
             }
         }
-        var minimal_priority_choices = std.ArrayList(u8).init(gpalloc.allocator());
+        var minimal_priority_choices = std.ArrayList(u8).init(alloc);
         defer minimal_priority_choices.deinit();
         // Search through choice_priorities and find the minimal ones
         for (choice_priorities.items, 0..) |choice_data, i| {

@@ -6,7 +6,8 @@ const tools = @import("tools.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
 var alloc: std.mem.Allocator = undefined;
-var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
+
+pub var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 const MAX_TURNDEPTH: u16 = 10;
 const MAX_LOOKAHEAD: u16 = 2;
 const K_LARGEST: u16 = 3;
@@ -15,22 +16,20 @@ comptime {
     assert(MAX_LOOKAHEAD > 1);
 }
 
-/// Globalized creationg of options for battle updates
-var buf: [pkmn.LOGS_SIZE]u8 = undefined;
-var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
+/// Globalized creation of options for battle updates
 // TODO Create issue on @pkmn/engine for not having to pass options with default values
 var options = pkmn.battle.options(
-    pkmn.protocol.FixedLog{ .writer = stream.writer() },
+    pkmn.protocol.NULL,
     pkmn.gen1.chance.NULL,
     pkmn.gen1.calc.NULL,
 );
 
 /// Setup
-pub fn init(box_pokemon: std.ArrayList(pkmn.gen1.Pokemon), allocator: std.mem.Allocator) void {
-    box = box_pokemon; // TODO Get box to own the slice of box_pokemon
+pub fn init(allocator: std.mem.Allocator) void {
     alloc = allocator;
+    box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
 }
-pub fn deinit() void {
+pub fn close() void {
     box.deinit();
 }
 
@@ -75,7 +74,6 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     depth = MAX_LOOKAHEAD;
 
     while (depth < MAX_TURNDEPTH) {
-        print("Depth: {}\n", .{depth});
         // Must be list of TurnChoices to be compatible with compare function for sorting by score
         var potential_nodes = std.ArrayList(TurnChoices).init(alloc);
         defer potential_nodes.deinit();

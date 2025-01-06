@@ -15,7 +15,7 @@
             args: [],
             env: {},
             stdout: (out) => console.log("stdout", out),
-            // stderr: (out) => console.log("stdout", out),
+            stderr: (out) => console.log("stdout", out),
             stdin: () => prompt("stdin:"),
             fs: {},
         });
@@ -27,6 +27,7 @@
         const result = wasi.start(wasm, {});
 
         $wasmExports = wasm.instance.exports;
+        $wasmExports.init();
     })
 </script>
 

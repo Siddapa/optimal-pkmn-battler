@@ -1,0 +1,42 @@
+Articuno
+EVs: 252 HP / 252 Spc  
+IVs: 30 Spc / 30 Spe  
+- Ice Beam  
+- Hurricane  
+- Substitute  
+- Roost  
+
+Ludicolo  
+EVs: 4 HP / 252 Spc / 252 Spe  
+- Surf  
+- Giga Drain  
+- Ice Beam  
+- Rain Dance  
+
+Volbeat
+EVs: 248 HP / 252 Def / 8 Spc  
+- Tail Glow  
+- Baton Pass  
+- Encore  
+- Rain Dance  
+
+Seismitoad
+EVs: 252 SpA / 4 Spc / 252 Spe  
+- Hydro Pump  
+- Earth Power  
+- Stealth Rock  
+- Rain Dance  
+
+Alomomola
+EVs: 252 HP / 252 Def / 4 Spc  
+- Wish  
+- Protect  
+- Toxic  
+- Rain Dance  
+
+Armaldo
+EVs: 128 HP / 252 Atk / 4 Def / 124 Spe  
+- X-Scissor  
+- Stone Edge  
+- Aqua Tail  
+- Rapid Spin  
