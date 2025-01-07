@@ -2,7 +2,7 @@ const std = @import("std");
 const json = std.json;
 const print = std.debug.print;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const alloc = gpa.allocator();
+const alloc = std.heap.wasm_allocator;
 
 const pkmn = @import("pkmn");
 const tools = @import("tools.zig");
@@ -11,22 +11,37 @@ const enemy_ai = @import("enemy_ai.zig");
 const import = @import("import.zig");
 
 const pkmn_options = pkmn.Options{ .internal = true };
+var decision_tree_instance: ?*player_ai.DecisionNode = undefined;
+var player_imports: std.ArrayList(import.PokemonImport) = undefined;
+var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
 
 export fn init() void {
     player_ai.init(alloc);
     enemy_ai.init(alloc);
-    import.init(alloc);
+    player_imports = std.ArrayList(import.PokemonImport).init(alloc);
+    enemy_imports = std.ArrayList(import.PokemonImport).init(alloc);
 }
 
-export fn close() void {
-    player_ai.close();
-    enemy_ai.close();
-    import.close();
+export fn clear() void {
+    player_ai.clear();
+    enemy_ai.clear();
+    while (player_imports.items.len > 0) {
+        _ = player_imports.pop();
+    }
+    while (enemy_imports.items.len > 0) {
+        _ = enemy_imports.pop();
+    }
 }
 
-export fn generateOptimizedDecisionTree(lead: usize) ?*player_ai.DecisionNode {
+export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
+    player_ai.free_tree(decision_tree_instance);
+    player_ai.clear();
+    enemy_ai.clear();
     var lead_pokemon: pkmn.gen1.helpers.Pokemon = undefined;
-    for (import.player_imports.items, 0..) |player_import, i| {
+    var enemy_helpers = [_]pkmn.gen1.helpers.Pokemon{undefined} ** 6; // Must enforce that enemy_imports is limited to 6 on frontend
+
+    for (player_imports.items, 0..) |player_import, i| {
+        print("Player Import: {}\n", .{player_import});
         var move_enums = [4]pkmn.gen1.Move{ .None, .None, .None, .None };
         for (player_import.moves, 0..) |move, j| {
             if (import.convert_move(move)) |valid_move| {
@@ -48,8 +63,8 @@ export fn generateOptimizedDecisionTree(lead: usize) ?*player_ai.DecisionNode {
         }
     }
 
-    var enemy_helpers = [_]pkmn.gen1.helpers.Pokemon{undefined} ** 6; // Must enforce that enemy_imports is limited to 6 on frontend
-    for (import.enemy_imports.items, 0..) |enemy_import, i| {
+    for (enemy_imports.items, 0..) |enemy_import, i| {
+        print("Enemy Import: {}\n", .{enemy_import});
         var move_enums = [4]pkmn.gen1.Move{ .None, .None, .None, .None };
         for (enemy_import.moves, 0..) |move, j| {
             if (import.convert_move(move)) |valid_move| {
@@ -68,6 +83,14 @@ export fn generateOptimizedDecisionTree(lead: usize) ?*player_ai.DecisionNode {
         }
     }
 
+    print("Lead Pokemon: {s}\n", .{@tagName(lead_pokemon.species)});
+    for (player_ai.box.items) |pokemon| {
+        print("Player Box: {s}\n", .{@tagName(pokemon.species)});
+    }
+    for (enemy_ai.team.items) |pokemon| {
+        print("Enemy Team: {s}\n", .{@tagName(pokemon.species)});
+    }
+
     var prng = std.rand.DefaultPrng.init(1234);
     var battle = pkmn.gen1.helpers.Battle.init(prng.random().int(u64), &.{lead_pokemon}, &enemy_helpers);
 
@@ -80,9 +103,9 @@ export fn generateOptimizedDecisionTree(lead: usize) ?*player_ai.DecisionNode {
     // Need an empty result and switch ins for generating tree
     const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch pkmn.Result{};
 
-    const root: ?*player_ai.DecisionNode = player_ai.optimal_decision_tree(battle, result);
+    decision_tree_instance = player_ai.optimal_decision_tree(battle, result);
 
-    return root;
+    return decision_tree_instance;
 }
 
 export fn getNextNode(curr_node: ?*player_ai.DecisionNode, index: usize) ?*player_ai.DecisionNode {
@@ -123,14 +146,25 @@ export fn getEnemyHP(curr_node: ?*player_ai.DecisionNode) usize {
     return curr_node.?.*.battle.side(tools.ENEMY_PID).stored().hp;
 }
 
-export fn importPokemon(json_import: [*]u8, size: u32, player: bool) void {
-    const parsed = json.parseFromSlice(import.PokemonImport, alloc, json_import[0..size], .{}) catch null;
+export fn importPokemon(json_import: [*]u8, size: u32, player: u8) void {
+    print("Import: {s}\n", .{json_import[0..size]});
+    const parsed = json.parseFromSlice(import.PokemonImport, alloc, json_import[0..size], .{ .allocate = .alloc_always }) catch null;
     if (parsed) |valid_parsed| {
-        if (player) {
-            import.player_imports.append(valid_parsed.value) catch void{};
+        if (player == 1) {
+            player_imports.append(valid_parsed.value) catch {
+                print("Player Failed to Import!\n", .{});
+                return void{};
+            };
         } else {
-            import.enemy_imports.append(valid_parsed.value) catch void{};
+            enemy_imports.append(valid_parsed.value) catch {
+                print("Enemy Failed to Import!\n", .{});
+                return void{};
+            };
         }
+    }
+
+    for (import.player_imports.items) |pokemon| {
+        print("{}\n", .{pokemon});
     }
 }
 

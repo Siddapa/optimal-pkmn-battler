@@ -29,8 +29,10 @@ pub fn init(allocator: std.mem.Allocator) void {
     team = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
 }
 
-pub fn close() void {
-    team.deinit();
+pub fn clear() void {
+    while (team.items.len > 0) {
+        _ = team.pop();
+    }
 }
 
 /// http://wiki.pokemonspeedruns.com/index.php/Pok%C3%A9mon_Red/Blue/Yellow_Trainer_AI

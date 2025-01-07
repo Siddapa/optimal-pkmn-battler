@@ -42,7 +42,7 @@
         nodes.clear();
         edges.clear();
         network.redraw();
-        zigRoot = $wasmExports.generateOptimizedDecisionTree()
+        zigRoot = $wasmExports.generateOptimizedDecisionTree(0);
 
         populateDecisionGraph(zigRoot, 0);
         

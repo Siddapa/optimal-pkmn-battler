@@ -13,9 +13,13 @@ pub fn init(alloc: std.mem.Allocator) void {
     enemy_imports = std.ArrayList(PokemonImport).init(alloc);
 }
 
-pub fn close() void {
-    player_imports.deinit();
-    enemy_imports.deinit();
+pub fn clear() void {
+    while (player_imports.items.len > 0) {
+        _ = player_imports.pop();
+    }
+    while (enemy_imports.items.len > 0) {
+        _ = enemy_imports.pop();
+    }
 }
 
 pub const PokemonImport = struct {
@@ -36,32 +40,9 @@ pub const PokemonImport = struct {
     moves: [4][]const u8,
 };
 
-// pub fn add_import(json_import: []const u8, alloc: std.mem.Allocator) void {
-//     const parsed = json.parseFromSlice(PokemonImport, alloc, json_import, .{ .allocate = .alloc_always }) catch null;
-//     if (parsed) |valid_parsed| {
-//         defer valid_parsed.deinit();
-//
-//         var move_enums = [4]pkmn.gen1.Move{ .None, .None, .None, .None };
-//         for (valid_parsed.value.moves, 0..) |move, i| {
-//             if (convert_move(move)) |valid_move| {
-//                 move_enums[i] = valid_move;
-//             }
-//         }
-//
-//         if (convert_species(valid_parsed.value.species)) |valid_species| {
-//             // TODO Check showdown format for displaying evs in gen 1 (much different compared to other gens)
-//             box.append(pkmn.gen1.helpers.Pokemon.init(.{ .species = valid_species, .moves = &move_enums, .dvs = pkmn.gen1.DVs{
-//                 .atk = @intCast(valid_parsed.value.dvs.atk),
-//                 .def = @intCast(valid_parsed.value.dvs.def),
-//                 .spc = @intCast(valid_parsed.value.dvs.spc),
-//                 .spe = @intCast(valid_parsed.value.dvs.spe),
-//             } })) catch void{};
-//         }
-//     }
-// }
-
 pub fn convert_species(species: []const u8) ?Species {
     const string_to_enum = std.StaticStringMap(Species).initComptime(.{
+        // .{ "", Species.None },
         .{ "Bulbasaur", Species.Bulbasaur },
         .{ "Ivysaur", Species.Ivysaur },
         .{ "Venusaur", Species.Venusaur },
@@ -220,6 +201,7 @@ pub fn convert_species(species: []const u8) ?Species {
 
 pub fn convert_move(move: []const u8) ?Move {
     const string_to_enum = std.StaticStringMap(Move).initComptime(.{
+        // .{ "", Move.None },
         .{ "Pound", Move.Pound },
         .{ "Karate Chop", Move.KarateChop },
         .{ "Double Slap", Move.DoubleSlap },

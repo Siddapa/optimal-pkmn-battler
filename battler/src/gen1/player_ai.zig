@@ -29,8 +29,10 @@ pub fn init(allocator: std.mem.Allocator) void {
     alloc = allocator;
     box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
 }
-pub fn close() void {
-    box.deinit();
+pub fn clear() void {
+    while (box.items.len > 0) {
+        _ = box.pop();
+    }
 }
 
 /// Structs for buliding decision tree
@@ -358,7 +360,7 @@ fn get_parent_turnchoice(child_node: ?*DecisionNode) TurnChoices {
     };
 }
 
-fn free_tree(curr_node: ?*DecisionNode) void {
+pub fn free_tree(curr_node: ?*DecisionNode) void {
     for (curr_node.?.*.next_turns.items) |next_turn| {
         if (next_turn.turn != null) {
             free_tree(next_turn.turn);
