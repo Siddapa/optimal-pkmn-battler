@@ -4,12 +4,12 @@ const assert = std.debug.assert;
 const pkmn = @import("pkmn");
 const tools = @import("tools.zig");
 const enemy_ai = @import("enemy_ai.zig");
-
-var alloc: std.mem.Allocator = undefined;
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var alloc = gpa.allocator();
 
 pub var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
-const MAX_TURNDEPTH: u16 = 10;
-const MAX_LOOKAHEAD: u16 = 2;
+const MAX_TURNDEPTH: u16 = 50;
+const MAX_LOOKAHEAD: u16 = 3;
 const K_LARGEST: u16 = 3;
 
 comptime {
@@ -23,17 +23,6 @@ var options = pkmn.battle.options(
     pkmn.gen1.chance.NULL,
     pkmn.gen1.calc.NULL,
 );
-
-/// Setup
-pub fn init(allocator: std.mem.Allocator) void {
-    alloc = allocator;
-    box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-}
-pub fn clear() void {
-    while (box.items.len > 0) {
-        _ = box.pop();
-    }
-}
 
 /// Structs for buliding decision tree
 pub const DecisionNode = struct {
@@ -51,11 +40,11 @@ pub const BoxSwitch = struct {
 };
 
 pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), starting_result: pkmn.Result) ?*DecisionNode {
-    var root: ?*DecisionNode = undefined;
-    var scoring_nodes: [K_LARGEST]?*DecisionNode = undefined;
+    var root: ?*DecisionNode = null;
+    var scoring_nodes = [_]?*DecisionNode{null} ** K_LARGEST;
     var depth: u16 = 0;
-    var i: u8 = undefined;
-    var original_len: usize = undefined;
+    var i: u8 = 0;
+    var original_len: usize = 0;
 
     // Generates inital starting node to iteratively expand upon
     const starting_team = [_]i8{ 0, -1, -1, -1, -1, -1 };
@@ -121,7 +110,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 }
 
 // TODO Access leaves for extension without recursing from a root node
-fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), curr_team: [6]i8, result: pkmn.Result, depth: u16) ?*DecisionNode {
+pub fn exhaustive_decision_tree(curr_node: ?*DecisionNode, parent_node: ?*DecisionNode, curr_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), curr_team: [6]i8, result: pkmn.Result, depth: u16) ?*DecisionNode {
     if (curr_node == null) {
         // Max possible depth to quickly generate is 6
         if (result.type != .None or depth == MAX_LOOKAHEAD) {
@@ -342,6 +331,7 @@ pub fn traverse_decision_tree(curr_node: ?*DecisionNode) !void {
             print("Failed to Read Line!\n", .{});
         }
     }
+    // print("{}\n", .{curr_node});
 }
 
 // Returns the turnchoice matching a given child
@@ -355,17 +345,19 @@ fn get_parent_turnchoice(child_node: ?*DecisionNode) TurnChoices {
     }
     return .{
         .choices = .{ pkmn.Choice{}, pkmn.Choice{} },
-        .turn = undefined,
+        .turn = null,
         .box_switch = null,
     };
 }
 
 pub fn free_tree(curr_node: ?*DecisionNode) void {
-    for (curr_node.?.*.next_turns.items) |next_turn| {
-        if (next_turn.turn != null) {
-            free_tree(next_turn.turn);
+    if (curr_node != null) {
+        for (curr_node.?.*.next_turns.items) |next_turn| {
+            if (next_turn.turn != null) {
+                free_tree(next_turn.turn);
+            }
         }
+        curr_node.?.*.next_turns.deinit();
+        alloc.destroy(curr_node.?);
     }
-    curr_node.?.*.next_turns.deinit();
-    alloc.destroy(curr_node.?);
 }

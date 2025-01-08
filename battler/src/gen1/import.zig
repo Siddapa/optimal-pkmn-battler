@@ -8,20 +8,6 @@ const Move = pkmn.gen1.Move;
 pub var player_imports: std.ArrayList(PokemonImport) = undefined;
 pub var enemy_imports: std.ArrayList(PokemonImport) = undefined;
 
-pub fn init(alloc: std.mem.Allocator) void {
-    player_imports = std.ArrayList(PokemonImport).init(alloc);
-    enemy_imports = std.ArrayList(PokemonImport).init(alloc);
-}
-
-pub fn clear() void {
-    while (player_imports.items.len > 0) {
-        _ = player_imports.pop();
-    }
-    while (enemy_imports.items.len > 0) {
-        _ = enemy_imports.pop();
-    }
-}
-
 pub const PokemonImport = struct {
     species: []const u8,
     dvs: struct { // Can't parse a JSON with less than 8 bits SMH
@@ -42,7 +28,7 @@ pub const PokemonImport = struct {
 
 pub fn convert_species(species: []const u8) ?Species {
     const string_to_enum = std.StaticStringMap(Species).initComptime(.{
-        // .{ "", Species.None },
+        .{ "", Species.None },
         .{ "Bulbasaur", Species.Bulbasaur },
         .{ "Ivysaur", Species.Ivysaur },
         .{ "Venusaur", Species.Venusaur },
@@ -201,7 +187,7 @@ pub fn convert_species(species: []const u8) ?Species {
 
 pub fn convert_move(move: []const u8) ?Move {
     const string_to_enum = std.StaticStringMap(Move).initComptime(.{
-        // .{ "", Move.None },
+        .{ "", Move.None },
         .{ "Pound", Move.Pound },
         .{ "Karate Chop", Move.KarateChop },
         .{ "Double Slap", Move.DoubleSlap },

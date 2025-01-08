@@ -10,8 +10,8 @@
     var edges = new DataSet([]);
     let graphID = 0;
 
-    function fetchString(memory, strLength) {
-        const outputView = new Uint8Array(memory.buffer, 0, strLength);
+    function fetchString(strLength) {
+        const outputView = new Uint8Array($wasmExports.memory.buffer, 0, strLength);
         return new TextDecoder().decode(outputView);
     }
 
@@ -25,15 +25,24 @@
             layout: {
                 hierarchical: {
                     direction: "UD",
+                    levelSeparation: 300,
+                    nodeSpacing: 250,
                 },
             },
             edges: {
                 smooth: {
+                    type: "cubicBezier",
                     forceDirection: "vertical"
                 },
             },
-            width: "500px",
-            height: "550px",
+            physics: {
+                "enabled": false,
+                barnesHut: {
+                    avoidOverlap: 0.5,
+                }
+            },
+            width: "1000px",
+            height: "300px",
         };
         network = new Network(container, data, options);
     }
@@ -59,17 +68,32 @@
             const nextNode = $wasmExports.getNextNode(zigNode, i);
             if (nextNode != 0) { // 0 pointers are null decision nodes
                 const childNodeID = populateDecisionGraph(nextNode, depth + 1);
-                edges.add([{from: currNodeID, to: childNodeID, arrows: "to"}])
+                edges.add([{
+                    from: currNodeID, 
+                    to: childNodeID, 
+                    label: graphEdgeLabel(zigNode, i), 
+                    font: {
+                        face: "Arial", 
+                        color: "red", 
+                        size: 15
+                    },
+                    shadow: false,
+                    arrows: "to"
+                }])
             }
         }
 
         return currNodeID;
     }
 
+    function graphEdgeLabel(zigNode, index) {
+        return fetchString($wasmExports.getTransitionChoice(zigNode, index, true, 0)) + "\n" + fetchString($wasmExports.getTransitionChoice(zigNode, index, false, 0));
+    }
+
     function graphNodeLabel(zigNode, depth) {
-        return fetchString($wasmExports.memory, $wasmExports.getPlayerSpecies(zigNode, 0)) + " (" + String($wasmExports.getPlayerHP(zigNode)) + ")" +
+        return fetchString($wasmExports.getSpecies(zigNode, true, 0)) + " (" + String($wasmExports.getHP(zigNode, true)) + ")" +
                '\nvs\n' + 
-               fetchString($wasmExports.memory, $wasmExports.getEnemySpecies(zigNode, 0)) + " (" + String($wasmExports.getEnemyHP(zigNode)) + ")";
+               fetchString($wasmExports.getSpecies(zigNode, false, 0)) + " (" + String($wasmExports.getHP(zigNode, false)) + ")";
     }
 
     onMount(() => {

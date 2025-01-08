@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) !void {
         exe.entry = .disabled;
     }
 
-    // @pkmn/engine dependency
+    // @pkmn/engine
     const pkmn = b.dependency("pkmn", .{ .showdown = showdown, .log = log, .chance = true, .calc = true });
     exe.root_module.addImport("pkmn", pkmn.module("pkmn"));
 

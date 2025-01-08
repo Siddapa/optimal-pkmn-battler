@@ -8,7 +8,23 @@
                 <option value="Packed">Packed</option>
                 <option value="JSON">JSON</option>
             </select>
-            <textarea class="import-input" rows="15" cols="12" bind:this={playerImport}>Articuno&#10;- Ice Beam&#10;&#10;Magikarp&#10;- Splash</textarea>
+            <textarea class="import-input" rows="15" cols="12" bind:this={playerImport}>Articuno
+- Ice Beam
+- Growl
+- Tackle
+- Wrap
+
+Kingler
+- Sand Attack
+- Headbutt
+- Horn Attack
+- Tail Whip
+
+Rhyhorn
+- Flamethrower
+- Mist
+- Water Gun
+- Psybeam</textarea>
             <br>
             {#each invalidPlayerImports as alert}
                 <span class="invalid-import">{alert['species']} is not within this generation!</span>
@@ -21,7 +37,23 @@
                 <option value="Packed">Packed</option>
                 <option value="JSON">JSON</option>
             </select>
-            <textarea class="import-input" rows="15" cols="10" bind:this={enemyImport}>Moltres&#10;- Agility&#10;&#10;Nidoking&#10;- Thunderbolt</textarea>
+            <textarea class="import-input" rows="15" cols="10" bind:this={enemyImport}>Jynx
+- Aurora Beam
+- Hyper Beam
+- Drill Peck
+- Peck
+
+Chansey
+- Counter
+- Seismic Toss
+- Strength
+- Absorb
+
+Goldeen
+- Razor Leaf
+- SolarBeam
+- Poison Powder
+- Fire Spin</textarea>
             <br>
             {#each invalidEnemyImports as alert}
                 <span class="invalid-import">{alert['species']} is not within this generation!</span>
@@ -81,13 +113,11 @@
         for (const pokemon of $playerBox) {
             const memoryView = new Uint8Array($wasmExports.memory.buffer);
             const { written } = new TextEncoder().encodeInto(JSON.stringify(pokemon), memoryView);
-            // console.log("Player Written: ", written);
             await $wasmExports.importPokemon(0, written, 1);
         }
         for (const pokemon of $enemyBox) {
             const memoryView = new Uint8Array($wasmExports.memory.buffer);
             const { written } = new TextEncoder().encodeInto(JSON.stringify(pokemon), memoryView);
-            // console.log("Enemy Written: ", written);
             await $wasmExports.importPokemon(0, written, 0);
         }
         
@@ -169,7 +199,6 @@
         if (newPokemon["species"]) {
             box.push(newPokemon);
         }
-        console.log(box);
         return box;
     }
 

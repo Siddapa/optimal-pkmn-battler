@@ -27,6 +27,7 @@
         const result = wasi.start(wasm, {});
 
         $wasmExports = wasm.instance.exports;
+        $wasmExports.memory.grow(100);
         $wasmExports.init();
     })
 </script>
@@ -66,6 +67,8 @@
 
     .import {
         grid-area: 1 / 1 / 2 / 2;
+        height: fit-content;
+        width: fit-content;
     }
     .boxes {
         display: flex;
@@ -84,11 +87,11 @@
     .settings {
         height: fit-content;
         width: fit-content;
-        grid-area: 2 / 1 / 3 / 3;
+        grid-area: 1 / 4 / 3 / 5;
     }
     .decision-tree {
         height: fit-content;
         width: fit-content;
-        grid-area: 1 / 4 / 3 / 5;
+        grid-area: 2 / 1 / 3 / 3;
     }
 </style>

@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 var prng = std.Random.DefaultPrng.init(1);
 var rand = prng.random();
-var alloc: std.mem.Allocator = undefined;
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 const pkmn = @import("pkmn");
 const Move = pkmn.gen1.Move;
@@ -24,22 +24,12 @@ const SwitchData = struct {
     index: u8,
 };
 
-pub fn init(allocator: std.mem.Allocator) void {
-    alloc = allocator;
-    team = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-}
-
-pub fn clear() void {
-    while (team.items.len > 0) {
-        _ = team.pop();
-    }
-}
-
 /// http://wiki.pokemonspeedruns.com/index.php/Pok%C3%A9mon_Red/Blue/Yellow_Trainer_AI
 /// Provides categories for move selection
 /// @arg(good_ai) should be enabled when facing certain trainers
 /// TODO Track number of turns on field in main loop
 pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) pkmn.Choice {
+    const alloc = gpa.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     const player_side: *const pkmn.gen1.Side = battle.side(tools.PLAYER_PID);
     const enemy_side: *const pkmn.gen1.Side = battle.side(tools.ENEMY_PID);
