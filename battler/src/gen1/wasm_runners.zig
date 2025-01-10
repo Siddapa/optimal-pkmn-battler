@@ -30,15 +30,6 @@ export fn clear() void {
     player_ai.box.clearAndFree();
     import.player_imports.clearAndFree();
     import.enemy_imports.clearAndFree();
-    // while (player_ai.box.items.len > 0) {
-    //     _ = player_ai.box.pop();
-    // }
-    // while (import.player_imports.items.len > 0) {
-    //     _ = import.player_imports.pop();
-    // }
-    // while (import.enemy_imports.items.len > 0) {
-    //     _ = import.enemy_imports.pop();
-    // }
 }
 
 export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
@@ -46,13 +37,10 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
     player_ai.box.clearAndFree();
     tree_gen_arena.deinit();
     tree_gen_alloc = tree_gen_arena.allocator();
-    // while (player_ai.box.items.len > 0) {
-    //     _ = player_ai.box.pop();
-    // }
+
     var lead_pokemon: pkmn.gen1.helpers.Pokemon = undefined;
     var enemy_helpers = std.ArrayList(pkmn.gen1.helpers.Pokemon).init(tree_gen_alloc); // Must enforce that enemy_imports is limited to 6 on frontend
 
-    var b: u8 = 0;
     for (import.player_imports.items, 0..) |player_import, i| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_gen_alloc);
         for (player_import.moves) |move| {
@@ -71,12 +59,10 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
                 lead_pokemon = new_pokemon;
             }
             player_ai.box.append(pkmn.gen1.helpers.Pokemon.init(new_pokemon)) catch continue;
-            b += 1;
         }
     }
 
     for (import.enemy_imports.items) |enemy_import| {
-        // print("Enemy Import: {}\n", .{enemy_import});
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_gen_alloc);
         for (enemy_import.moves) |move| {
             if (import.convert_move(move)) |valid_move| {
@@ -120,6 +106,23 @@ export fn getNumOfNextTurns(curr_node: ?*player_ai.DecisionNode) usize {
     return if (curr_node) |valid_curr_node| valid_curr_node.*.next_turns.items.len else 0;
 }
 
+export fn getResult(curr_node: ?*player_ai.DecisionNode) i8 {
+    if (curr_node) |valid_curr_node| {
+        return if (valid_curr_node.result.type == .None) 1 else 0;
+    }
+    return -1;
+}
+
+export fn getTeam(curr_node: ?*player_ai.DecisionNode, out: [*]i8) u8 {
+    if (curr_node) |valid_curr_node| {
+        for (0..6) |i| {
+            out[i] = valid_curr_node.team[i];
+        }
+        return 6;
+    }
+    return 0;
+}
+
 export fn getTransitionChoice(curr_node: ?*player_ai.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
     const valid_curr_node = if (curr_node) |valid_curr_node| valid_curr_node else return 0;
     const turn_choice: player_ai.TurnChoices = valid_curr_node.next_turns.items[index];
@@ -132,7 +135,7 @@ export fn getTransitionChoice(curr_node: ?*player_ai.DecisionNode, index: usize,
             details = std.fmt.allocPrint(tree_gen_alloc, "P_Move: {s}", .{@tagName(valid_curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
         } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
             if (turn_choice.box_switch) |valid_box_switch| {
-                details = std.fmt.allocPrint(tree_gen_alloc, "P_Switch: {s}", .{@tagName(valid_box_switch.added_pokemon.species)}) catch "";
+                details = std.fmt.allocPrint(tree_gen_alloc, "P_BoxSwitch: {s}", .{@tagName(valid_box_switch.added_pokemon.species)}) catch "";
             } else {
                 details = std.fmt.allocPrint(tree_gen_alloc, "P_Switch: {s}", .{@tagName(valid_curr_node.battle.side(side).get(choice.data).species)}) catch "";
             }
@@ -144,7 +147,7 @@ export fn getTransitionChoice(curr_node: ?*player_ai.DecisionNode, index: usize,
             details = std.fmt.allocPrint(tree_gen_alloc, "E_Move: {s}", .{@tagName(valid_curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
         } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
             if (turn_choice.box_switch) |valid_box_switch| {
-                details = std.fmt.allocPrint(tree_gen_alloc, "E_Switch: {s}", .{@tagName(valid_box_switch.added_pokemon.species)}) catch "";
+                details = std.fmt.allocPrint(tree_gen_alloc, "E_BoxSwitch: {s}", .{@tagName(valid_box_switch.added_pokemon.species)}) catch "";
             } else {
                 details = std.fmt.allocPrint(tree_gen_alloc, "E_Switch: {s}", .{@tagName(valid_curr_node.battle.side(side).get(choice.data).species)}) catch "";
             }

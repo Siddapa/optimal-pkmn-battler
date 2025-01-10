@@ -15,6 +15,10 @@
         return new TextDecoder().decode(outputView);
     }
 
+    function fetchArray(arrLength) {
+        return new Int8Array($wasmExports.memory.buffer, 0, arrLength);
+    }
+
     function initGraph() {
         var container = document.getElementById("decisionGraph");
         var data = {
@@ -26,13 +30,7 @@
                 hierarchical: {
                     direction: "UD",
                     levelSeparation: 300,
-                    nodeSpacing: 250,
-                },
-            },
-            edges: {
-                smooth: {
-                    type: "cubicBezier",
-                    forceDirection: "vertical"
+                    nodeSpacing: 300,
                 },
             },
             physics: {
@@ -60,7 +58,24 @@
 
     const populateDecisionGraph = (zigNode, depth) => {
         const currNodeID = graphID;
-        nodes.add([{id: currNodeID, level: depth, label: graphNodeLabel(zigNode, depth), zigNode: zigNode}]);
+
+        var bkgdColor = "#00FF00";
+
+        if ($wasmExports.getResult(zigNode) != 1) {
+            bkgdColor = "#0000FF"
+        } else if (fetchString($wasmExports.getHP(zigNode, true)) == 0) {
+            bkgdColor = "#FF0000"
+        }
+        
+        nodes.add([{
+            id: currNodeID, 
+            level: depth, 
+            label: graphNodeLabel(zigNode, depth), 
+            color: {
+                background: bkgdColor
+            },
+            zigNode: zigNode
+        }]);
         graphID += 1;
 
         const numOfNextTurns = $wasmExports.getNumOfNextTurns(zigNode);
@@ -74,7 +89,7 @@
                     label: graphEdgeLabel(zigNode, i), 
                     font: {
                         face: "Arial", 
-                        color: "red", 
+                        color: "blue", 
                         size: 15
                     },
                     shadow: false,
@@ -93,7 +108,9 @@
     function graphNodeLabel(zigNode, depth) {
         return fetchString($wasmExports.getSpecies(zigNode, true, 0)) + " (" + String($wasmExports.getHP(zigNode, true)) + ")" +
                '\nvs\n' + 
-               fetchString($wasmExports.getSpecies(zigNode, false, 0)) + " (" + String($wasmExports.getHP(zigNode, false)) + ")";
+               fetchString($wasmExports.getSpecies(zigNode, false, 0)) + " (" + String($wasmExports.getHP(zigNode, false)) + ")" + 
+               '\n' + 
+               fetchArray($wasmExports.getTeam(zigNode, 0));
     }
 
     onMount(() => {
