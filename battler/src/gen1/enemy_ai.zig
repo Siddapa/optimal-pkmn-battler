@@ -31,8 +31,8 @@ const SwitchData = struct {
 pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) pkmn.Choice {
     const alloc = gpa.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-    const player_side: *const pkmn.gen1.Side = battle.side(tools.PLAYER_PID);
-    const enemy_side: *const pkmn.gen1.Side = battle.side(tools.ENEMY_PID);
+    const player_side = battle.side(tools.PLAYER_PID);
+    const enemy_side = battle.side(tools.ENEMY_PID);
 
     const max_choice = battle.choices(tools.ENEMY_PID, result.p2, &choices);
     const valid_choices = choices[0..max_choice];

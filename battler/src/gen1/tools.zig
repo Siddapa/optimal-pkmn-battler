@@ -51,7 +51,7 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     return battle;
 }
 
-pub fn sampleOptimizedDecisionTree() ?*player_ai.DecisionTree {
+pub fn sample_optimized_decision_tree() ?*player_ai.DecisionNode {
     var battle = init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -72,8 +72,7 @@ pub fn sampleOptimizedDecisionTree() ?*player_ai.DecisionTree {
     // Need an empty result and switch ins for generating tree
     const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch pkmn.Result{};
 
-    const allocator = gpa.allocator();
-    var box_pokemon = std.ArrayList(pkmn.gen1.Pokemon).init(allocator);
+    player_ai.box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
     const box_pokemon_array = [_]pkmn.gen1.helpers.Pokemon{
         .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
         .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
@@ -82,12 +81,12 @@ pub fn sampleOptimizedDecisionTree() ?*player_ai.DecisionTree {
         .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
     };
     for (box_pokemon_array) |mon| {
-        box_pokemon.append(pkmn.gen1.helpers.Pokemon.init(mon)) catch continue;
+        player_ai.box.append(pkmn.gen1.helpers.Pokemon.init(mon)) catch continue;
     }
 
     const root: ?*player_ai.DecisionNode = player_ai.optimal_decision_tree(battle, result);
 
-    player_ai.close();
+    // TODO Resource cleanup
 
     return root;
 }

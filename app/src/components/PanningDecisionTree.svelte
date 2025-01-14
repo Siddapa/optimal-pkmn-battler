@@ -86,7 +86,7 @@
                 edges.add([{
                     from: currNodeID, 
                     to: childNodeID, 
-                    label: graphEdgeLabel(zigNode, i), 
+                    label: graphEdgeLabel(zigNode, i),
                     font: {
                         face: "Arial", 
                         color: "blue", 
