@@ -137,48 +137,52 @@ pub fn exhaustive_decision_tree(optional_curr_node: ?*DecisionNode, parent_node:
             .next_turns = std.ArrayList(TurnChoices).init(alloc),
         };
 
-        var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-        const max1 = curr_battle.choices(tools.PLAYER_PID, result.p1, &choices);
-        const engine_valid_choices = choices[0..max1];
-        // Enemy only guaranteed to make one move
-        // TODO Issue #6
-        const enemy_choice = enemy_ai.pick_choice(curr_battle, result, 0);
+        var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+        var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+
+        const player_max = curr_battle.choices(tools.PLAYER_PID, result.p1, &player_choices);
+        const engine_valid_choices = player_choices[0..player_max];
+
+        const enemy_max = enemy_ai.pick_choice(curr_battle, result, 0, &enemy_choices);
+        const enemy_valid_choices = enemy_choices[0..enemy_max];
 
         var new_team = curr_team;
 
-        for (engine_valid_choices) |choice| {
-            const new_result: pkmn.Result = next_battle.update(choice, enemy_choice, &options) catch pkmn.Result{};
-            new_team = curr_team;
-            const child_node = exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
-            next_battle = curr_battle;
-            if (new_node) |valid_new_node| valid_new_node.next_turns.append(.{ .choices = .{ choice, enemy_choice }, .next_node = child_node, .box_switch = null }) catch continue;
-        }
-
-        // TODO Full team edge case
-        var new_member_slot: usize = 0;
-        for (curr_team, 0..) |box_id, i| {
-            if (box_id == -1) {
-                new_member_slot = i;
-                break;
-            }
-        }
-        // Still being zero means no new slot
-        if (0 < new_member_slot) {
-            for (box.items, 0..) |box_mon, box_index| {
+        for (enemy_valid_choices) |enemy_choice| {
+            for (engine_valid_choices) |choice| {
+                const new_result: pkmn.Result = next_battle.update(choice, enemy_choice, &options) catch pkmn.Result{};
                 new_team = curr_team;
-                var in_box: bool = false;
-                for (curr_team) |team_index| { // Is box_mon already on team?
-                    if (box_index == team_index) {
-                        in_box = true;
-                    }
+                const child_node = exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
+                next_battle = curr_battle;
+                if (new_node) |valid_new_node| valid_new_node.next_turns.append(.{ .choices = .{ choice, enemy_choice }, .next_node = child_node, .box_switch = null }) catch continue;
+            }
+
+            // TODO Full team edge case
+            var new_member_slot: usize = 0;
+            for (curr_team, 0..) |box_id, i| {
+                if (box_id == -1) {
+                    new_member_slot = i;
+                    break;
                 }
-                if (!in_box) {
-                    const switch_choice: pkmn.Choice = add_to_team(&next_battle, box_mon, new_member_slot);
-                    const new_result: pkmn.Result = next_battle.update(switch_choice, enemy_choice, &options) catch pkmn.Result{};
-                    new_team[new_member_slot] = @intCast(box_index);
-                    const child_node = exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
-                    next_battle = curr_battle;
-                    new_node.?.*.next_turns.append(.{ .choices = .{ switch_choice, enemy_choice }, .next_node = child_node, .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot, .box_id = box_index } }) catch continue;
+            }
+            // Still being zero means no new slot
+            if (0 < new_member_slot) {
+                for (box.items, 0..) |box_mon, box_index| {
+                    new_team = curr_team;
+                    var in_box: bool = false;
+                    for (curr_team) |team_index| { // Is box_mon already on team?
+                        if (box_index == team_index) {
+                            in_box = true;
+                        }
+                    }
+                    if (!in_box) {
+                        const switch_choice: pkmn.Choice = add_to_team(&next_battle, box_mon, new_member_slot);
+                        const new_result: pkmn.Result = next_battle.update(switch_choice, enemy_choice, &options) catch pkmn.Result{};
+                        new_team[new_member_slot] = @intCast(box_index);
+                        const child_node = exhaustive_decision_tree(null, new_node, next_battle, new_team, new_result, depth + 1);
+                        next_battle = curr_battle;
+                        new_node.?.*.next_turns.append(.{ .choices = .{ switch_choice, enemy_choice }, .next_node = child_node, .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot, .box_id = box_index } }) catch continue;
+                    }
                 }
             }
         }

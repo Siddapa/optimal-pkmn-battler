@@ -1,8 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
-var prng = std.Random.DefaultPrng.init(1);
-var rand = prng.random();
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 const pkmn = @import("pkmn");
@@ -13,22 +11,16 @@ const tools = @import("tools.zig");
 
 pub var team: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 
-const MoveData = struct {
+const ChoiceData = struct {
     choice: pkmn.Choice,
     priority: i8,
-    valid: i8 = 0,
-};
-
-const SwitchData = struct {
-    choice: pkmn.Choice,
-    index: u8,
 };
 
 /// http://wiki.pokemonspeedruns.com/index.php/Pok%C3%A9mon_Red/Blue/Yellow_Trainer_AI
 /// Provides categories for move selection
 /// @arg(good_ai) should be enabled when facing certain trainers
 /// TODO Track number of turns on field in main loop
-pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8) pkmn.Choice {
+pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8, out: []pkmn.Choice) usize {
     const alloc = gpa.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     const player_side = battle.side(tools.PLAYER_PID);
@@ -40,17 +32,18 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
 
     // When no switches available and pokemon is restricted from moving
     if (valid_choices[0].type == pkmn.Choice.Type.Move and valid_choices[0].data == 0) {
-        return valid_choices[0];
+        out[0] = valid_choices[0];
+        return 1;
     }
 
-    var choice_priorities = std.ArrayList(MoveData).init(alloc);
-    defer choice_priorities.deinit();
-    const bottom_choice = valid_choices[valid_choices.len - 1];
-    if (bottom_choice.type == pkmn.Choice.Type.Move and bottom_choice.data != 0) {
-        // Assign priority to each valid move
-        var min_priority: i8 = 100;
+    var choice_datas = std.ArrayList(ChoiceData).init(alloc);
+    defer choice_datas.deinit();
+
+    // Switches are only possible when enemy's active pokemon is dead
+    if (player_side.stored().hp != 0) {
+        var min_priority: i8 = 100; // Represents +inf since priority which reach that high
         for (valid_choices) |choice| {
-            if (choice.type == pkmn.Choice.Type.Move) {
+            if (choice.type == pkmn.Choice.Type.Move and choice.data != 0) {
                 var priority: i8 = 10;
                 const move = enemy_side.active.move(choice.data).id;
                 // Disfavor status-ing moves on status-ed pokemon
@@ -66,32 +59,33 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
                 if (priority < min_priority) {
                     min_priority = priority;
                 }
-                choice_priorities.append(.{
+                choice_datas.append(.{
                     .choice = choice,
                     .priority = priority,
                 }) catch continue;
             }
         }
-        var minimal_priority_choices = std.ArrayList(u8).init(alloc);
-        defer minimal_priority_choices.deinit();
-        // Search through choice_priorities and find the minimal ones
-        for (choice_priorities.items, 0..) |choice_data, i| {
+
+        var min_priority_count: u8 = 0;
+        for (choice_datas.items) |choice_data| {
             if (choice_data.priority == min_priority) {
-                minimal_priority_choices.append(@intCast(i)) catch continue;
+                out[min_priority_count] = choice_data.choice;
+                min_priority_count += 1;
             }
         }
-        // TODO Look into whether rejection sampling matters
-        const random_choice = minimal_priority_choices.items[rand.uintLessThan(usize, minimal_priority_choices.items.len)];
-        return choice_priorities.items[random_choice].choice;
+        return min_priority_count;
     } else {
         // Find lowest current-order switch that matches original team order
-        var lowest_switch: SwitchData = .{ .choice = pkmn.Choice{}, .index = 100 };
+        var lowest_switch = pkmn.Choice{};
+        var lowest_index: u8 = 100;
         for (valid_choices) |choice| {
-            if (choice.data < lowest_switch.index) {
-                lowest_switch = .{ .choice = choice, .index = choice.data };
+            if (choice.data < lowest_index) {
+                lowest_switch = choice;
+                lowest_index = choice.data;
             }
         }
-        return lowest_switch.choice;
+        out[0] = lowest_switch;
+        return 1;
     }
 }
 

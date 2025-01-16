@@ -195,6 +195,7 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
 }
 
 pub fn main() void {
+    // _ = tools.sample_optimized_decision_tree();
     // init();
     // const player_imports = [3]import.PokemonImport{ .{ .species = "Articuno", .evs = .{}, .dvs = .{}, .moves = .{ "Ice Beam", "Growl", "Tackle", "Wrap" } }, .{ .species = "Kingler", .moves = &.{ "Sand Attack", "Headbutt", "Horn Attack", "Tail Whip" } }, .{ .species = "Rhyhorn", .moves = &.{ "Flamethrower", "Mist", "Water Gun", "Psybeam" } } };
     // const enemy_imports = [3]import.PokemonImport{ .{ .species = "Jynx", .moves = &.{ "Aurora Beam", "Hyper Beam", "Drill Peck", "Peck" } }, .{ .species = "Chansey", .moves = &.{ "Counter", "Seismic Toss", "Strength", "Absorb" } }, .{ .species = "Goldeen", .moves = &.{ "Razor Leaf", "Solarbeam", "Poison Powder", "Fire Spin" } } };
