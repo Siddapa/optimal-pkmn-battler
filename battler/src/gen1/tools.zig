@@ -2,6 +2,7 @@ const std = @import("std");
 const print = std.debug.print;
 const assert = std.debug.assert;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var alloc = gpa.allocator();
 
 const pkmn = @import("pkmn");
 const Pokemon = pkmn.gen1.helpers.Pokemon;
@@ -11,6 +12,29 @@ const enemy_ai = @import("enemy_ai.zig");
 
 pub const PLAYER_PID: pkmn.Player = .P1;
 pub const ENEMY_PID: pkmn.Player = .P2;
+
+pub fn battle_details(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), hp: bool, moves: bool) void {
+    const player_pkmn = battle.side(PLAYER_PID).stored();
+    const enemy_pkmn = battle.side(ENEMY_PID).stored();
+
+    if (hp) print("Player: {s}, HP: {}/{}, HP Taken: {}\n", .{ @tagName(player_pkmn.species), player_pkmn.hp, player_pkmn.stats.hp, player_pkmn.stats.hp - player_pkmn.hp });
+    if (moves) {
+        for (player_pkmn.moves, 0..) |move, i| {
+            print("Move {}: {}\n", .{ i, move });
+        }
+    }
+
+    print("\n", .{});
+
+    if (hp) print("Enemy: {s}, HP: {}/{}, HP Taken: {}\n", .{ @tagName(enemy_pkmn.species), enemy_pkmn.hp, enemy_pkmn.stats.hp, enemy_pkmn.stats.hp - enemy_pkmn.hp });
+    if (moves) {
+        for (enemy_pkmn.moves, 0..) |move, i| {
+            print("Move {}: {}\n", .{ i, move });
+        }
+    }
+
+    print("\n", .{});
+}
 
 pub fn print_battle(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2: pkmn.Choice) void {
     const player_pkmn = battle.side(PLAYER_PID).stored();
@@ -51,46 +75,6 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     return battle;
 }
 
-pub fn sample_optimized_decision_tree() ?*player_ai.DecisionNode {
-    var battle = init_battle(&.{
-        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
-    }, &.{
-        .{ .species = .Pidgey, .moves = &.{.Pound} },
-        .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
-        .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
-        .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
-        .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
-        .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
-    });
-
-    var options = pkmn.battle.options(
-        pkmn.protocol.NULL,
-        pkmn.gen1.chance.NULL,
-        pkmn.gen1.calc.NULL,
-    );
-
-    // Need an empty result and switch ins for generating tree
-    const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch pkmn.Result{};
-
-    player_ai.box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
-    const box_pokemon_array = [_]pkmn.gen1.helpers.Pokemon{
-        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
-        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
-        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
-        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
-        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
-    };
-    for (box_pokemon_array) |mon| {
-        player_ai.box.append(pkmn.gen1.helpers.Pokemon.init(mon)) catch continue;
-    }
-
-    const root: ?*player_ai.DecisionNode = player_ai.optimal_decision_tree(battle, result);
-
-    // TODO Resource cleanup
-
-    return root;
-}
-
 pub fn random_vs_enemy_ai() !void {
     var battle = init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
@@ -109,17 +93,20 @@ pub fn random_vs_enemy_ai() !void {
         &chance,
         pkmn.gen1.calc.NULL,
     );
-    var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
 
     var c1 = pkmn.Choice{};
     var c2 = pkmn.Choice{};
-    var result = try battle.update(c1, c2, &options);
+    var result = battle.update(c1, c2, &options) catch pkmn.Result{};
     while (result.type == .None) {
-        const max1 = battle.choices(.P1, result.p1, &choices);
+        const max1 = battle.choices(.P1, result.p1, &player_choices);
         const n1 = random.uintLessThan(u8, max1);
-        c1 = choices[n1];
+        c1 = player_choices[n1];
 
-        c2 = try enemy_ai.pick_choice(battle, result, 0);
+        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices));
+        const n2 = random.uintLessThan(u8, max2);
+        c2 = enemy_choices[n2];
 
         // tools.print_battle(battle, c1, c2);
         // print("\n\n", .{});
@@ -130,9 +117,81 @@ pub fn random_vs_enemy_ai() !void {
             .cap = true,
             .seed = 123,
         });
+        try out.print("\n\n\n\n\n\n\n\n\n\n\n\n\n", .{});
         try out.print("{}\n", .{stats.?});
 
-        result = try battle.update(c1, c2, &options);
+        result = battle.update(c1, c2, &options) catch pkmn.Result{};
+        break;
     }
     print("{}\n", .{result.type});
+}
+
+// TODO Rewrite to traverse iteratively, not recursively
+pub fn traverse_decision_tree(start_node: *player_ai.DecisionNode) !void {
+    var curr_node = start_node;
+    while (true) {
+        // Spacing between node selections
+        print("-" ** 30, .{});
+        print("\n", .{});
+
+        // Selects choices made to get to the current turn
+        var c1 = pkmn.Choice{};
+        var c2 = pkmn.Choice{};
+        if (curr_node.previous_node) |previous_node| {
+            for (previous_node.next_turns.items, 0..) |next_turn, i| {
+                if (next_turn.next_node == curr_node) {
+                    c1 = previous_node.next_turns.items[i].choices[0];
+                    c2 = previous_node.next_turns.items[i].choices[1];
+                }
+            }
+        }
+        print_battle(curr_node.battle, c1, c2);
+        print("Last Damage: {}\n", .{curr_node.battle.last_damage});
+
+        // Displays possible moves/switches as well as traversing to previous nodes/quitting
+        print("Select one of the following choices: \n", .{});
+        for (curr_node.next_turns.items, 0..) |next_turn, i| {
+            const next_node = next_turn.next_node;
+            if (next_turn.choices[0].type == pkmn.Choice.Type.Move) {
+                print("{}={s}/M ({}), ", .{ i + 1, @tagName(curr_node.battle.side(PLAYER_PID).stored().move(next_turn.choices[0].data).id), next_node.score });
+            } else if (next_turn.choices[0].type == pkmn.Choice.Type.Switch and next_turn.choices[0].data != 42) {
+                if (next_turn.box_switch) |box_switch| {
+                    print("{}={s}/S ({}), ", .{ i + 1, @tagName(box_switch.added_pokemon.species), next_node.score });
+                } else {
+                    print("{}={s}/S ({}), ", .{ i + 1, @tagName(curr_node.battle.side(PLAYER_PID).get(next_turn.choices[0].data).species), next_node.score });
+                }
+            } else if (next_turn.choices[0].type == pkmn.Choice.Type.Pass) {
+                print("c=continue, ", .{});
+            }
+        }
+        if (curr_node.previous_node) |_| {
+            print("p=previous turn, q=quit\n", .{});
+        } else {
+            print("q=quit\n", .{});
+        }
+
+        // Takes a single character (u8) for processing next node to follow
+        var input_buf: [10]u8 = undefined;
+        const reader = std.io.getStdIn().reader();
+        if (try reader.readUntilDelimiterOrEof(input_buf[0..], '\n')) |user_input| {
+            if (user_input.len == @as(usize, 0)) {
+                print("Invalid input!\n", .{});
+                break;
+            } else if (49 <= user_input[0] and user_input[0] <= 57) { // ASCII range of integers from 1-9
+                const choice_id = try std.fmt.parseInt(u8, user_input, 10);
+                curr_node = curr_node.next_turns.items[choice_id - 1].next_node;
+            } else if (user_input[0] == 'c') {
+                curr_node = curr_node.next_turns.items[0].next_node;
+            } else if (user_input[0] == 'p') {
+                curr_node = curr_node.previous_node orelse break;
+            } else if (user_input[0] == 'q') {
+                break;
+            } else {
+                print("Invalid input!\n", .{});
+                break;
+            }
+        } else {
+            print("Failed to Read Line!\n", .{});
+        }
+    }
 }
