@@ -8,20 +8,20 @@ const enemy_ai = @import("enemy_ai.zig");
 pub var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 
 // Maximum number of levels to build tree to
-const MAX_TURNLEVEL: u16 = 20;
+const MAX_TURNLEVEL: u16 = 10;
 
 // Number of levels to extend tree by at some node
 const LOOKAHEAD: u16 = 1;
 
 // Maximum number of nodes to optimize for at a given level
-const K_LARGEST: u16 = 3;
+const K_LARGEST: u16 = 1;
 
 // Binary mask for which of the 16 rolls to generate (always keep min/max roll)
-const ROLL_INTERVALS: u16 = 0b1001001001001001;
+const ROLL_INTERVALS: u16 = 0b1000000000000001;
 
 comptime {
     assert(LOOKAHEAD > 0);
-    assert(K_LARGEST > 1);
+    assert(K_LARGEST > 0);
 
     const min_max = ROLL_INTERVALS == 0b1000000000000001;
     const seconds = ROLL_INTERVALS == 0b1001001001001001;
@@ -40,8 +40,6 @@ const options = pkmn.battle.options(
     &chance,
     &calc,
 );
-
-const PlayerAIError = error{ AllocationFailure, UnableToUpdate };
 
 /// Structs for buliding decision tree
 pub const DecisionNode = struct {
@@ -72,6 +70,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 
     var level: u16 = 1;
     while (level < MAX_TURNLEVEL) {
+        print("Level: {}\n", .{level});
         // Must be list of TurnChoices to be compatible with compare function for sorting by score
         var scored_nodes = std.ArrayList(*DecisionNode).init(alloc);
         defer scored_nodes.deinit();
@@ -90,10 +89,12 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
 
         // Keep only the K_LARGEST nodes
         std.mem.sort(*DecisionNode, scored_nodes.items, {}, compare_score);
-        const original_len = scored_nodes.items.len;
-        if (original_len > K_LARGEST) {
-            for (0..(original_len - K_LARGEST - 1)) |_| {
+        const scored_len = scored_nodes.items.len;
+        if (scored_len > K_LARGEST) {
+            var i: usize = 0;
+            while (i < (scored_len - K_LARGEST)) : (i += 1) {
                 const delete_node = scored_nodes.swapRemove(K_LARGEST);
+                // print("Delete Node: {*}\n", .{delete_node});
                 const previous_node = delete_node.previous_node orelse continue;
                 const turn_choice_index = get_parent_turnchoice_index(previous_node, delete_node) orelse return error.NoParent;
 
@@ -196,8 +197,8 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
     var updates = std.ArrayList(Update).init(alloc);
     var seen = std.AutoHashMap(pkmn.gen1.chance.Actions, void).init(alloc);
     var frontier = std.ArrayList(pkmn.gen1.chance.Actions).init(alloc);
+    errdefer updates.deinit();
     defer seen.deinit();
-    defer updates.deinit();
     defer frontier.deinit();
 
     var opts = pkmn.battle.options(

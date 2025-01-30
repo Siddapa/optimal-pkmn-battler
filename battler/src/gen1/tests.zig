@@ -15,7 +15,7 @@ var options = pkmn.battle.options(
     pkmn.gen1.Calc{},
 );
 
-test "MovesTransitions" {
+test "Transitions" {
     const alloc = gpa.allocator();
 
     var battle = tools.init_battle(&.{
@@ -40,7 +40,7 @@ test "MovesTransitions" {
     for (player_valid_choices) |player_choice| {
         for (enemy_valid_choices) |enemy_choice| {
             tools.print_battle(battle, player_choice, enemy_choice);
-            print("\n\n", .{});
+            print("\n", .{});
 
             const updates: []player_ai.Update = try player_ai.transitions(battle, player_choice, enemy_choice, options.chance.durations, alloc);
             total_updates += updates.len;
@@ -50,7 +50,6 @@ test "MovesTransitions" {
                 tools.battle_details(update.battle, true, false);
                 print("\n", .{});
             }
-            print("\n\n", .{});
         }
     }
 

@@ -4,7 +4,7 @@ var filename_alloc = gpa.allocator();
 
 pub fn build(b: *std.Build) !void {
     const wasm = b.option(bool, "wasm", "Enable WASM compilation") orelse false;
-    const test_filters = b.option([]const []const u8, "filter-tests", "Skip tests that do not match any filter") orelse &[0][]const u8{};
+    const test_filters = b.option([]const []const u8, "test-filters", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const generation = b.option([]const u8, "generation", "Specify which generation") orelse "gen1";
     const showdown = b.option(bool, "showdown", "Enable Pokémon Showdown compatibility mode") orelse false;
     const log = b.option(bool, "log", "Enable protocol message logging") orelse false;

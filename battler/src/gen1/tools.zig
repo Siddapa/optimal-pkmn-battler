@@ -46,17 +46,11 @@ pub fn print_battle(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c
         print("Move Made: {s}\n", .{@tagName(player_pkmn.move(c1.data).id)});
     }
 
-    print("\n", .{});
-
     print("AI: {s}, HP: {}/{}\n", .{ @tagName(enemy_pkmn.species), enemy_pkmn.hp, enemy_pkmn.stats.hp });
     print("AI Choice: {s}, {}\n", .{ @tagName(c2.type), c2.data });
     if (c2.type == pkmn.Choice.Type.Move and c2.data != 0) {
         print("Move Made: {s}\n", .{@tagName(enemy_pkmn.move(c2.data).id)});
     }
-
-    // print("\n", .{});
-    // print("-" ** 50, .{});
-    // print("\n\n", .{});
 }
 
 pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Battle(pkmn.gen1.PRNG) {

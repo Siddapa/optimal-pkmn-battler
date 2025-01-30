@@ -1,9 +1,9 @@
 const std = @import("std");
+const print = std.debug.print;
+const json = std.json;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var import_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-const json = std.json;
-const print = std.debug.print;
 
 const String = @import("string").String;
 
@@ -18,6 +18,7 @@ var import_alloc: std.mem.Allocator = undefined;
 var tree_prep_alloc: std.mem.Allocator = undefined;
 
 var decision_tree_instance: ?*player_ai.DecisionNode = null;
+
 pub const pkmn_options = pkmn.Options{ .internal = true };
 
 export fn init() void {
@@ -84,7 +85,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
         }
     }
 
-    var prng = std.rand.DefaultPrng.init(1234);
+    var prng = std.Random.DefaultPrng.init(1234);
     var battle = pkmn.gen1.helpers.Battle.init(prng.random().int(u64), &.{lead_pokemon}, enemy_helpers.toOwnedSlice() catch return null);
 
     var options = pkmn.battle.options(
