@@ -10,12 +10,9 @@ const Pokemon = pkmn.gen1.helpers.Pokemon;
 const player_ai = @import("player_ai.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
-pub const PLAYER_PID: pkmn.Player = .P1;
-pub const ENEMY_PID: pkmn.Player = .P2;
-
 pub fn battle_details(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), hp: bool, moves: bool) void {
-    const player_pkmn = battle.side(PLAYER_PID).stored();
-    const enemy_pkmn = battle.side(ENEMY_PID).stored();
+    const player_pkmn = battle.side(.P1).stored();
+    const enemy_pkmn = battle.side(.P2).stored();
 
     if (hp) print("Player: {s}, HP: {}/{}, HP Taken: {}\n", .{ @tagName(player_pkmn.species), player_pkmn.hp, player_pkmn.stats.hp, player_pkmn.stats.hp - player_pkmn.hp });
     if (moves) {
@@ -37,8 +34,8 @@ pub fn battle_details(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), hp: bool, moves:
 }
 
 pub fn print_battle(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2: pkmn.Choice) void {
-    const player_pkmn = battle.side(PLAYER_PID).stored();
-    const enemy_pkmn = battle.side(ENEMY_PID).stored();
+    const player_pkmn = battle.side(.P1).stored();
+    const enemy_pkmn = battle.side(.P2).stored();
 
     print("Player: {s}, HP: {}/{}\n", .{ @tagName(player_pkmn.species), player_pkmn.hp, player_pkmn.stats.hp });
     print("Player Choice: {s}, {}\n", .{ @tagName(c1.type), c1.data });
@@ -69,58 +66,8 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     return battle;
 }
 
-pub fn random_vs_enemy_ai() !void {
-    var battle = init_battle(&.{
-        .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
-    }, &.{
-        .{ .species = .Pidgey, .moves = &.{.Pound} },
-    });
+pub fn random_vs_enemy_ai() !void {}
 
-    var prng = std.Random.DefaultPrng.init(2);
-    var random = prng.random();
-
-    var buf: [pkmn.LOGS_SIZE]u8 = undefined;
-    var stream = pkmn.protocol.ByteStream{ .buffer = &buf };
-    var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
-    var options = pkmn.battle.options(
-        pkmn.protocol.FixedLog{ .writer = stream.writer() },
-        &chance,
-        pkmn.gen1.calc.NULL,
-    );
-    var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-    var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-
-    var c1 = pkmn.Choice{};
-    var c2 = pkmn.Choice{};
-    var result = battle.update(c1, c2, &options) catch pkmn.Result{};
-    while (result.type == .None) {
-        const max1 = battle.choices(.P1, result.p1, &player_choices);
-        const n1 = random.uintLessThan(u8, max1);
-        c1 = player_choices[n1];
-
-        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices));
-        const n2 = random.uintLessThan(u8, max2);
-        c2 = enemy_choices[n2];
-
-        // tools.print_battle(battle, c1, c2);
-        // print("\n\n", .{});
-
-        const out = std.io.getStdOut().writer();
-        const stats = try pkmn.gen1.calc.transitions(battle, c1, c2, gpa.allocator(), out, .{
-            .durations = options.chance.durations,
-            .cap = true,
-            .seed = 123,
-        });
-        try out.print("\n\n\n\n\n\n\n\n\n\n\n\n\n", .{});
-        try out.print("{}\n", .{stats.?});
-
-        result = battle.update(c1, c2, &options) catch pkmn.Result{};
-        break;
-    }
-    print("{}\n", .{result.type});
-}
-
-// TODO Rewrite to traverse iteratively, not recursively
 pub fn traverse_decision_tree(start_node: *player_ai.DecisionNode) !void {
     var curr_node = start_node;
     while (true) {
@@ -147,12 +94,12 @@ pub fn traverse_decision_tree(start_node: *player_ai.DecisionNode) !void {
         for (curr_node.next_turns.items, 0..) |next_turn, i| {
             const next_node = next_turn.next_node;
             if (next_turn.choices[0].type == pkmn.Choice.Type.Move) {
-                print("{}={s}/M ({}), ", .{ i + 1, @tagName(curr_node.battle.side(PLAYER_PID).stored().move(next_turn.choices[0].data).id), next_node.score });
+                print("{}={s}/M ({}), ", .{ i + 1, @tagName(curr_node.battle.side(.P1).stored().move(next_turn.choices[0].data).id), next_node.score });
             } else if (next_turn.choices[0].type == pkmn.Choice.Type.Switch and next_turn.choices[0].data != 42) {
                 if (next_turn.box_switch) |box_switch| {
                     print("{}={s}/S ({}), ", .{ i + 1, @tagName(box_switch.added_pokemon.species), next_node.score });
                 } else {
-                    print("{}={s}/S ({}), ", .{ i + 1, @tagName(curr_node.battle.side(PLAYER_PID).get(next_turn.choices[0].data).species), next_node.score });
+                    print("{}={s}/S ({}), ", .{ i + 1, @tagName(curr_node.battle.side(.P1).get(next_turn.choices[0].data).species), next_node.score });
                 }
             } else if (next_turn.choices[0].type == pkmn.Choice.Type.Pass) {
                 print("c=continue, ", .{});

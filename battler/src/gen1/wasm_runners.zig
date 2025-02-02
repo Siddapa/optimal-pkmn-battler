@@ -18,21 +18,23 @@ var import_alloc: std.mem.Allocator = undefined;
 var tree_prep_alloc: std.mem.Allocator = undefined;
 
 var decision_tree_instance: ?*player_ai.DecisionNode = null;
+var player_imports: std.ArrayList(import.PokemonImport) = undefined;
+var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
 
 pub const pkmn_options = pkmn.Options{ .internal = true };
 
 export fn init() void {
     import_alloc = import_arena.allocator();
     player_ai.box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
-    import.player_imports = std.ArrayList(import.PokemonImport).init(std.heap.page_allocator);
-    import.enemy_imports = std.ArrayList(import.PokemonImport).init(std.heap.page_allocator);
+    player_imports = std.ArrayList(import.PokemonImport).init(std.heap.page_allocator);
+    enemy_imports = std.ArrayList(import.PokemonImport).init(std.heap.page_allocator);
 }
 
 export fn clear() void {
     import_arena.deinit();
     player_ai.box.clearAndFree();
-    import.player_imports.clearAndFree();
-    import.enemy_imports.clearAndFree();
+    player_imports.clearAndFree();
+    enemy_imports.clearAndFree();
 }
 
 export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
@@ -42,9 +44,10 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
     tree_prep_alloc = tree_prep_arena.allocator();
 
     var lead_pokemon: pkmn.gen1.helpers.Pokemon = undefined;
-    var enemy_helpers = std.ArrayList(pkmn.gen1.helpers.Pokemon).init(tree_prep_alloc); // Must enforce that enemy_imports is limited to 6 on frontend
+    // TODO Use a FixedBufferAllocator
+    var enemy_team = std.ArrayList(pkmn.gen1.helpers.Pokemon).init(tree_prep_alloc); // Must enforce that enemy_imports is limited to 6 on frontend
 
-    for (import.player_imports.items, 0..) |player_import, i| {
+    for (player_imports.items, 0..) |player_import, i| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_prep_alloc);
 
         for (player_import.moves) |move| {
@@ -66,7 +69,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
         }
     }
 
-    for (import.enemy_imports.items) |enemy_import| {
+    for (enemy_imports.items) |enemy_import| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_prep_alloc);
 
         for (enemy_import.moves) |move| {
@@ -76,7 +79,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
         }
 
         if (import.convert_species(enemy_import.species)) |valid_species| {
-            enemy_helpers.append(.{ .species = valid_species, .moves = move_enums.toOwnedSlice() catch continue, .dvs = pkmn.gen1.DVs{
+            enemy_team.append(.{ .species = valid_species, .moves = move_enums.toOwnedSlice() catch continue, .dvs = pkmn.gen1.DVs{
                 .atk = @intCast(enemy_import.dvs.atk),
                 .def = @intCast(enemy_import.dvs.def),
                 .spc = @intCast(enemy_import.dvs.spc),
@@ -86,20 +89,29 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
     }
 
     var prng = std.Random.DefaultPrng.init(1234);
-    var battle = pkmn.gen1.helpers.Battle.init(prng.random().int(u64), &.{lead_pokemon}, enemy_helpers.toOwnedSlice() catch return null);
+    var battle = pkmn.gen1.helpers.Battle.init(prng.random().int(u64), &.{lead_pokemon}, enemy_team.toOwnedSlice() catch return null);
 
-    var options = pkmn.battle.options(
+    var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
+    var calc = pkmn.gen1.Calc{};
+    const options = pkmn.battle.options(
         pkmn.protocol.NULL,
-        pkmn.gen1.chance.NULL,
-        pkmn.gen1.calc.NULL,
+        &chance,
+        &calc,
     );
 
     // Need an empty result and switch ins for generating tree
-    const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch pkmn.Result{};
+    const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch return null;
 
-    // const starting_team = [_]i8{ 0, -1, -1, -1, -1, -1 };
-    // decision_tree_instance = player_ai.exhaustive_decision_tree(null, null, battle, starting_team, result, 0) catch null;
-    // return decision_tree_instance;
+    // const root: *player_ai.DecisionNode = tree_gen_alloc.create(player_ai.DecisionNode) catch return null;
+    // root.* = .{
+    //     .battle = battle,
+    //     .team = .{ 0, -1, -1, -1, -1, -1 },
+    //     .result = result,
+    //     .previous_node = null,
+    //     .next_turns = std.ArrayList(player_ai.TurnChoices).init(tree_gen_alloc),
+    // };
+    // player_ai.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
+    // return root;
 
     if (player_ai.optimal_decision_tree(battle, result, tree_gen_alloc)) |decision_tree| {
         decision_tree_instance = decision_tree;
@@ -118,6 +130,10 @@ export fn getNumOfNextTurns(curr_node: *player_ai.DecisionNode) usize {
     return curr_node.next_turns.items.len;
 }
 
+export fn getScore(curr_node: *player_ai.DecisionNode) u16 {
+    return curr_node.score;
+}
+
 export fn getResult(curr_node: *player_ai.DecisionNode) i8 {
     return if (curr_node.result.type == .None) 1 else 0;
 }
@@ -132,7 +148,7 @@ export fn getTeam(curr_node: *player_ai.DecisionNode, out: [*]i8) u8 {
 export fn getTransitionChoice(curr_node: *player_ai.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
     const turn_choice: player_ai.TurnChoices = curr_node.next_turns.items[index];
     const choice: pkmn.Choice = turn_choice.choices[if (player) 0 else 1];
-    const side = if (player) tools.PLAYER_PID else tools.ENEMY_PID;
+    const side: pkmn.Player = if (player) .P1 else .P2;
     var details: []const u8 = undefined;
 
     if (player) {
@@ -159,11 +175,7 @@ export fn getTransitionChoice(curr_node: *player_ai.DecisionNode, index: usize, 
                 details = std.fmt.allocPrint(tree_prep_alloc, "E_Move: {s}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
             }
         } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
-            if (turn_choice.box_switch) |box_switch| {
-                details = std.fmt.allocPrint(tree_prep_alloc, "E_BoxSwitch: {s}", .{@tagName(box_switch.added_pokemon.species)}) catch "";
-            } else {
-                details = std.fmt.allocPrint(tree_prep_alloc, "E_Switch: {s}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)}) catch "";
-            }
+            details = std.fmt.allocPrint(tree_prep_alloc, "E_Switch: {s}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)}) catch "";
         } else {
             details = std.fmt.allocPrint(tree_prep_alloc, "Pass", .{}) catch "";
         }
@@ -174,42 +186,27 @@ export fn getTransitionChoice(curr_node: *player_ai.DecisionNode, index: usize, 
 }
 
 export fn getSpecies(curr_node: *player_ai.DecisionNode, player: bool, out: [*]u8) usize {
-    const side = if (player) tools.PLAYER_PID else tools.ENEMY_PID;
+    const side: pkmn.Player = if (player) .P1 else .P2;
     const species_str: []const u8 = @tagName(curr_node.battle.side(side).stored().species);
     @memcpy(out, species_str);
     return species_str.len;
 }
 
 export fn getHP(curr_node: *player_ai.DecisionNode, player: bool) usize {
-    const side = if (player) tools.PLAYER_PID else tools.ENEMY_PID;
+    const side: pkmn.Player = if (player) .P1 else .P2;
     return curr_node.battle.side(side).stored().hp;
 }
 
 export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
     const json_str = json_import[0..size];
-    const parsed = json.parseFromSlice(import.PokemonImport, import_alloc, json_str, .{ .allocate = .alloc_always }) catch null;
-    if (parsed) |valid_parsed| {
+    const optional_parsed = json.parseFromSlice(import.PokemonImport, import_alloc, json_str, .{ .allocate = .alloc_always }) catch null;
+    if (optional_parsed) |parsed| {
         if (player == 1) {
-            import.player_imports.append(valid_parsed.value) catch return void{};
+            player_imports.append(parsed.value) catch return void{};
         } else {
-            import.enemy_imports.append(valid_parsed.value) catch return void{};
+            enemy_imports.append(parsed.value) catch return void{};
         }
     }
 }
 
-pub fn main() !void {
-    // try tools.random_vs_enemy_ai();
-    // const decision_tree = try tools.sample_optimized_decision_tree2();
-    // print("Root Count: {}\n", .{player_ai.count_nodes(decision_tree)});
-    // try tools.traverse_decision_tree(root);
-    // init();
-    // const player_imports = [3]import.PokemonImport{ .{ .species = "Articuno", .evs = .{}, .dvs = .{}, .moves = .{ "Ice Beam", "Growl", "Tackle", "Wrap" } }, .{ .species = "Kingler", .moves = &.{ "Sand Attack", "Headbutt", "Horn Attack", "Tail Whip" } }, .{ .species = "Rhyhorn", .moves = &.{ "Flamethrower", "Mist", "Water Gun", "Psybeam" } } };
-    // const enemy_imports = [3]import.PokemonImport{ .{ .species = "Jynx", .moves = &.{ "Aurora Beam", "Hyper Beam", "Drill Peck", "Peck" } }, .{ .species = "Chansey", .moves = &.{ "Counter", "Seismic Toss", "Strength", "Absorb" } }, .{ .species = "Goldeen", .moves = &.{ "Razor Leaf", "Solarbeam", "Poison Powder", "Fire Spin" } } };
-
-    // for (player_imports) |pokemon| {
-    //     try import.player_imports.append(pokemon);
-    // }
-    // for (enemy_imports) |pokemon| {
-    //     try import.enemy_imports.append(pokemon);
-    // }
-}
+pub fn main() !void {}

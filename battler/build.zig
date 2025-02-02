@@ -16,8 +16,6 @@ pub fn build(b: *std.Build) !void {
     const main = b.addExecutable(.{
         .name = generation,
         .root_source_file = b.path(main_source),
-        // Release Small is double the speed of ReleaseFast but both are under 0.1s
-        // with MAX_DEPTH = 50, LOOKAHEAD = 3, and K_LARGEST = 4
         .optimize = .Debug,
         .target = if (wasm) b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi }) else default_target,
     });
@@ -27,7 +25,11 @@ pub fn build(b: *std.Build) !void {
     defer filename_alloc.free(test_name);
     defer filename_alloc.free(test_source);
     // TODO Add customizability for which tests to run as an option
-    const tests = b.addTest(.{ .name = test_name, .root_source_file = b.path(test_source), .filters = test_filters });
+    const tests = b.addTest(.{
+        .name = test_name,
+        .root_source_file = b.path(test_source),
+        .filters = test_filters,
+    });
 
     if (wasm) {
         main.rdynamic = true;

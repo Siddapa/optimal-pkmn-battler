@@ -23,10 +23,10 @@ const ChoiceData = struct {
 pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8, out: []pkmn.Choice) usize {
     const alloc = gpa.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-    const player_side = battle.side(tools.PLAYER_PID);
-    const enemy_side = battle.side(tools.ENEMY_PID);
+    const player_side = battle.side(.P1);
+    const enemy_side = battle.side(.P2);
 
-    const max_choice = battle.choices(tools.ENEMY_PID, result.p2, &choices);
+    const max_choice = battle.choices(.P2, result.p2, &choices);
     const valid_choices = choices[0..max_choice];
     assert(valid_choices.len > 0);
 
@@ -40,10 +40,10 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     defer choice_datas.deinit();
 
     // Switches are only possible when enemy's active pokemon is dead
-    if (player_side.stored().hp != 0) {
+    if (enemy_side.stored().hp != 0) {
         var min_priority: i8 = 100; // Represents +inf since priority which reach that high
         for (valid_choices) |choice| {
-            if (choice.type == pkmn.Choice.Type.Move and choice.data != 0) {
+            if (choice.type == .Move and choice.data != 0) {
                 var priority: i8 = 10;
                 const move = enemy_side.active.move(choice.data).id;
                 // Disfavor status-ing moves on status-ed pokemon
@@ -79,7 +79,7 @@ pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
         var lowest_switch = pkmn.Choice{};
         var lowest_index: u8 = 100;
         for (valid_choices) |choice| {
-            if (choice.data < lowest_index) {
+            if (choice.data < lowest_index and choice.type == .Switch) {
                 lowest_switch = choice;
                 lowest_index = choice.data;
             }

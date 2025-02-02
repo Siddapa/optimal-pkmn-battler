@@ -15,48 +15,80 @@ var options = pkmn.battle.options(
     pkmn.gen1.Calc{},
 );
 
-test "Transitions" {
-    const alloc = gpa.allocator();
+test "BaseTransitions" {
+    print("Transitions\n", .{});
 
     var battle = tools.init_battle(&.{
-        .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
+        .{ .species = .Bulbasaur, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
         .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
     }, &.{
-        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .HyperBeam, .DrillPeck, .Peck } },
+        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .HyperBeam, .Blizzard, .Peck } },
+        .{ .species = .Rhyhorn, .moves = &.{ .Thunderbolt, .Mist, .WaterGun, .Psybeam } },
     });
 
     const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch pkmn.Result{};
 
+    const total_updates = try run_transitions(battle, result);
+
+    print("# of Updates: {}\n", .{total_updates});
+}
+
+test "EnemySwitchTransitions" {
+    print("EnemySwitchTransitions\n", .{});
+
+    var battle = tools.init_battle(&.{
+        .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
+        .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
+    }, &.{
+        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .Flamethrower, .Blizzard, .Peck }, .hp = 1 },
+        .{ .species = .Rhyhorn, .moves = &.{ .Thunderbolt, .Mist, .WaterGun, .Psybeam } },
+    });
+
+    var result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
+
     var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
 
-    const player_max = battle.choices(tools.PLAYER_PID, result.p1, &player_choices);
+    const player_max = battle.choices(.P1, result.p1, &player_choices);
     const player_valid_choices = player_choices[0..player_max];
 
     const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices);
     const enemy_valid_choices = enemy_choices[0..enemy_max];
 
-    var total_updates: usize = 0;
-    for (player_valid_choices) |player_choice| {
-        for (enemy_valid_choices) |enemy_choice| {
-            tools.print_battle(battle, player_choice, enemy_choice);
-            print("\n", .{});
+    // Moves are harcoded so changing initial conditions could break test
+    result = try battle.update(player_valid_choices[1], enemy_valid_choices[0], &options);
 
-            const updates: []player_ai.Update = try player_ai.transitions(battle, player_choice, enemy_choice, options.chance.durations, alloc);
-            total_updates += updates.len;
+    tools.battle_details(battle, true, true);
 
-            for (updates) |update| {
-                print("Actions: {}\n", .{update.actions});
-                tools.battle_details(update.battle, true, false);
-                print("\n", .{});
-            }
-        }
-    }
+    const total_updates = try run_transitions(battle, result);
 
     print("# of Updates: {}\n", .{total_updates});
 }
 
-test "Optimal1" {
+test "BoxSwitchTransitions" {
+    print("BoxSwitchTransitions\n", .{});
+
+    var battle = tools.init_battle(&.{
+        .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
+    }, &.{
+        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .Flamethrower, .Blizzard, .Peck } },
+        .{ .species = .Rhyhorn, .moves = &.{ .Thunderbolt, .Mist, .WaterGun, .Psybeam } },
+    });
+
+    //
+
+    const result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
+
+    const switch_mon = pkmn.gen1.helpers.Pokemon.init(.{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } });
+    _ = player_ai.add_to_team(&battle, switch_mon, 2);
+
+    const total_updates = try run_transitions(battle, result);
+
+    print("# of Updates: {}\n", .{total_updates});
+}
+
+test "OptimalWASM" {
+    print("Optimal1\n", .{});
     const battle = tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
     }, &.{
@@ -73,7 +105,8 @@ test "Optimal1" {
     try run_optimal(battle, &box_pokemon);
 }
 
-test "Exhaust2" {
+test "Exhaust1" {
+    print("Exhaust2\n", .{});
     const battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -96,7 +129,8 @@ test "Exhaust2" {
     try run_exhaust(battle, &box_pokemon);
 }
 
-test "Optimal2" {
+test "Optimal1" {
+    print("Optimal2\n", .{});
     const battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -116,6 +150,77 @@ test "Optimal2" {
     };
 
     try run_optimal(battle, &box_pokemon);
+}
+
+test "Random" {
+    print("Random\n", .{});
+    var battle = tools.init_battle(&.{
+        .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
+    }, &.{
+        .{ .species = .Pidgey, .moves = &.{.Pound} },
+    });
+
+    var prng = std.Random.DefaultPrng.init(0);
+    var random = prng.random();
+
+    var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+
+    var c1 = pkmn.Choice{};
+    var c2 = pkmn.Choice{};
+    var result = battle.update(c1, c2, &options) catch pkmn.Result{};
+    while (result.type == .None) {
+        const max1 = battle.choices(.P1, result.p1, &player_choices);
+        const n1 = random.uintLessThan(u8, max1);
+        c1 = player_choices[n1];
+
+        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices));
+        const n2 = random.uintLessThan(u8, max2);
+        c2 = enemy_choices[n2];
+
+        tools.print_battle(battle, c1, c2);
+        print("\n\n", .{});
+
+        result = battle.update(c1, c2, &options) catch pkmn.Result{};
+    }
+    print("{}\n", .{result.type});
+}
+
+fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !usize {
+    const alloc = gpa.allocator();
+
+    var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+
+    const player_max = battle.choices(.P1, result.p1, &player_choices);
+    const player_valid_choices = player_choices[0..player_max];
+
+    const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices);
+    const enemy_valid_choices = enemy_choices[0..enemy_max];
+
+    print("Enemy Valid Choices: {any}\n", .{enemy_valid_choices});
+
+    var total_updates: usize = 0;
+    for (player_valid_choices) |player_choice| {
+        for (enemy_valid_choices) |enemy_choice| {
+            tools.print_battle(battle, player_choice, enemy_choice);
+            print("\n", .{});
+
+            const updates: []player_ai.Update = try player_ai.transitions(battle, player_choice, enemy_choice, options.chance.durations, alloc);
+            total_updates += updates.len;
+
+            for (updates) |update| {
+                print("Actions: {}\n", .{update.actions});
+                print("P1: {} {}\n", .{ update.actions.p1.hit, update.actions.p1.critical_hit });
+                print("P2: {} {}\n", .{ update.actions.p2.hit, update.actions.p2.critical_hit });
+                tools.battle_details(update.battle, true, false);
+                print("\n", .{});
+            }
+            print("\n", .{});
+        }
+    }
+
+    return total_updates;
 }
 
 fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {

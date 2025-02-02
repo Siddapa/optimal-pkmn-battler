@@ -40,7 +40,7 @@ Rhyhorn
             <textarea class="import-input" rows="15" cols="10" bind:this={enemyImport}>Jynx
 - Aurora Beam
 - Hyper Beam
-- Drill Peck
+- Blizzard
 - Peck
 
 Chansey
@@ -127,20 +127,22 @@ Goldeen
         var lines = importTeam.split("\n");
         const numOfLines = lines.length;
         var box = [];
+        const base_dv = 15;
+        const base_exp = 65535;
         var newPokemon = {
             "species": "",
             "dvs": {
-                "atk": 0,
-                "def": 0,
-                "spc": 0,
-                "spe": 0
+                "atk": base_dv,
+                "def": base_dv,
+                "spc": base_dv,
+                "spe": base_dv
             },
-            "evs": {
-                "hp": 0,
-                "atk": 0,
-                "def": 0,
-                "spc": 0,
-                "spe": 0
+            "exp": {
+                "hp": base_exp,
+                "atk": base_exp,
+                "def": base_exp,
+                "spc": base_exp,
+                "spe": base_exp
             },
             "moves": ["", "", "", ""]
         };
@@ -179,17 +181,17 @@ Goldeen
                 newPokemon = {
                     "species": "",
                     "dvs": {
-                        "atk": 0,
-                        "def": 0,
-                        "spc": 0,
-                        "spe": 0
+                        "atk": base_dv,
+                        "def": base_dv,
+                        "spc": base_dv,
+                        "spe": base_dv
                     },
-                    "evs": {
-                        "hp": 0,
-                        "atk": 0,
-                        "def": 0,
-                        "spc": 0,
-                        "spe": 0
+                    "exp": {
+                        "hp": base_exp,
+                        "atk": base_exp,
+                        "def": base_exp,
+                        "spc": base_exp,
+                        "spe": base_exp
                     },
                     "moves": ["", "", "", ""]
                 };

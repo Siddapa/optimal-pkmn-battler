@@ -63,7 +63,7 @@
 
         if ($wasmExports.getResult(zigNode) != 1) {
             bkgdColor = "#0000FF"
-        } else if (fetchString($wasmExports.getHP(zigNode, true)) == 0) {
+        } else if ($wasmExports.getHP(zigNode, true) == 0 || $wasmExports.getHP(zigNode, false) == 0) {
             bkgdColor = "#FF0000"
         }
         
@@ -110,7 +110,9 @@
                '\nvs\n' + 
                fetchString($wasmExports.getSpecies(zigNode, false, 0)) + " (" + String($wasmExports.getHP(zigNode, false)) + ")" + 
                '\n' + 
-               fetchArray($wasmExports.getTeam(zigNode, 0));
+               fetchArray($wasmExports.getTeam(zigNode, 0)) + 
+               '\n' + 
+               $wasmExports.getScore(zigNode);
     }
 
     onMount(() => {

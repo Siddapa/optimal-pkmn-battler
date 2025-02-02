@@ -5,23 +5,20 @@ const pkmn = @import("pkmn");
 const Species = pkmn.gen1.Species;
 const Move = pkmn.gen1.Move;
 
-pub var player_imports: std.ArrayList(PokemonImport) = undefined;
-pub var enemy_imports: std.ArrayList(PokemonImport) = undefined;
-
 pub const PokemonImport = struct {
     species: []const u8,
     dvs: struct { // Can't parse a JSON with less than 8 bits SMH
-        atk: u8,
-        def: u8,
-        spc: u8,
-        spe: u8,
+        atk: u16,
+        def: u16,
+        spc: u16,
+        spe: u16,
     },
-    evs: struct {
-        hp: u8,
-        atk: u8,
-        def: u8,
-        spc: u8,
-        spe: u8,
+    exp: struct {
+        hp: u16,
+        atk: u16,
+        def: u16,
+        spc: u16,
+        spe: u16,
     },
     moves: [4][]const u8,
 };
