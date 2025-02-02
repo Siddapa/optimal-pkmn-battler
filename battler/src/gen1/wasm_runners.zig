@@ -44,11 +44,11 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
     tree_prep_alloc = tree_prep_arena.allocator();
 
     var lead_pokemon: pkmn.gen1.helpers.Pokemon = undefined;
-    // TODO Use a FixedBufferAllocator
-    var enemy_team = std.ArrayList(pkmn.gen1.helpers.Pokemon).init(tree_prep_alloc); // Must enforce that enemy_imports is limited to 6 on frontend
+    var enemy_team = std.ArrayList(pkmn.gen1.helpers.Pokemon).init(tree_prep_alloc);
 
     for (player_imports.items, 0..) |player_import, i| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_prep_alloc);
+        defer move_enums.deinit();
 
         for (player_import.moves) |move| {
             if (import.convert_move(move)) |valid_move| {
@@ -71,6 +71,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
 
     for (enemy_imports.items) |enemy_import| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_prep_alloc);
+        defer move_enums.deinit();
 
         for (enemy_import.moves) |move| {
             if (import.convert_move(move)) |valid_move| {
@@ -86,6 +87,10 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
                 .spe = @intCast(enemy_import.dvs.spe),
             } }) catch continue;
         }
+    }
+
+    if (enemy_imports.items.len > 6) {
+        return null;
     }
 
     var prng = std.Random.DefaultPrng.init(1234);

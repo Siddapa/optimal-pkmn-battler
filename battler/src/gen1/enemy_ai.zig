@@ -108,6 +108,7 @@ fn check_types(check_type: pkmn.gen1.Type, player_types: pkmn.gen1.Types) bool {
     return (player_types.type1 == check_type or player_types.type2 == check_type);
 }
 
+// TODO Convert to a hashtable
 fn super_effective_matchup(move_type: pkmn.gen1.Type, player_types: pkmn.gen1.Types) i8 {
     if (move_type == .Water and check_types(.Fire, player_types)) {
         return -1;

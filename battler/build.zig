@@ -24,7 +24,6 @@ pub fn build(b: *std.Build) !void {
     const test_source = try std.fmt.allocPrint(filename_alloc, "src/{s}/tests.zig", .{generation});
     defer filename_alloc.free(test_name);
     defer filename_alloc.free(test_source);
-    // TODO Add customizability for which tests to run as an option
     const tests = b.addTest(.{
         .name = test_name,
         .root_source_file = b.path(test_source),

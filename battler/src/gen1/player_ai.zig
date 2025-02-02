@@ -26,7 +26,6 @@ comptime {
 }
 
 /// Globalized creation of options for battle updates
-// TODO Create issue on @pkmn/engine for not having to pass options with default values
 var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
 var calc = pkmn.gen1.Calc{};
 const options = pkmn.battle.options(
@@ -133,7 +132,6 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     return root;
 }
 
-// TODO Access leaves for extension without recursing from a root node
 pub fn exhaustive_decision_tree(curr_node: *DecisionNode, level: u16, alloc: std.mem.Allocator) !void {
     if (level < LOOKAHEAD + 1) {
         if (curr_node.next_turns.items.len == 0) {
@@ -187,7 +185,7 @@ pub fn exhaustive_decision_tree(curr_node: *DecisionNode, level: u16, alloc: std
                 assert(player_max > 0);
                 // TODO Proper validation of whether box switch is legal (Block, etc.)
                 if (player_valid_choices[0].type != .Pass) { // Can't force box switch when not able to select a switch
-                    // TODO Full team edge case
+                    // Iterate through team until first instance of empty team slot
                     var new_member_slot: usize = 0;
                     for (curr_node.team, 0..) |box_id, i| {
                         if (box_id == -1) {
@@ -411,7 +409,6 @@ fn score(scoring_node: *DecisionNode, turn_choice: TurnChoices) u16 {
             sum += 2;
         }
         // Fast MultiKill
-        // TODO Create a damage calculator to tell if player T-HKO < enemy T-HKO
         if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(.P2).stored().hp == 0) {}
     } else if (choices[0].type == .Switch) {
         sum += 5;
@@ -423,7 +420,6 @@ fn score(scoring_node: *DecisionNode, turn_choice: TurnChoices) u16 {
 }
 
 fn compare_score(_: void, n1: *DecisionNode, n2: *DecisionNode) bool {
-    // TODO What to do when scores are equal
     if (n1.score > n2.score) {
         return true;
     } else {
