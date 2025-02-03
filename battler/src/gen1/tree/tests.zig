@@ -4,7 +4,7 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 const pkmn = @import("pkmn");
 
-const player_ai = @import("player_ai.zig");
+const builder = @import("builder.zig");
 const enemy_ai = @import("enemy_ai.zig");
 const tools = @import("tools.zig");
 
@@ -80,7 +80,7 @@ test "BoxSwitchTransitions" {
     const result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
     const switch_mon = pkmn.gen1.helpers.Pokemon.init(.{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } });
-    _ = player_ai.add_to_team(&battle, switch_mon, 2);
+    _ = builder.add_to_team(&battle, switch_mon, 2);
 
     const total_updates = try run_transitions(battle, result);
 
@@ -206,7 +206,7 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
             tools.print_battle(battle, player_choice, enemy_choice);
             print("\n", .{});
 
-            const updates: []player_ai.Update = try player_ai.transitions(battle, player_choice, enemy_choice, options.chance.durations, alloc);
+            const updates: []builder.Update = try builder.transitions(battle, player_choice, enemy_choice, options.chance.durations, alloc);
             total_updates += updates.len;
 
             for (updates) |update| {
@@ -226,39 +226,39 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
 fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
     const alloc = gpa.allocator();
 
-    player_ai.box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
-    defer player_ai.box.deinit();
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
+    defer box.deinit();
     for (box_pokemon) |mon| {
-        try player_ai.box.append(pkmn.gen1.helpers.Pokemon.init(mon));
+        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
     }
 
     var b = battle;
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
-    const root: *player_ai.DecisionNode = try alloc.create(player_ai.DecisionNode);
+    const root: *builder.DecisionNode = try alloc.create(builder.DecisionNode);
     root.* = .{
         .battle = b,
         .team = .{ 0, -1, -1, -1, -1, -1 },
         .result = result,
         .previous_node = null,
-        .next_turns = std.ArrayList(player_ai.TurnChoices).init(alloc),
+        .next_turns = std.ArrayList(builder.TurnChoices).init(alloc),
     };
-    _ = player_ai.exhaustive_decision_tree(root, 1, alloc) catch null;
-    player_ai.free_tree(root, alloc);
+    _ = builder.exhaustive_decision_tree(root, &box, 1, alloc) catch null;
+    builder.free_tree(root, alloc);
 }
 
 fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
     const alloc = gpa.allocator();
 
-    player_ai.box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
-    defer player_ai.box.deinit();
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
+    defer box.deinit();
     for (box_pokemon) |mon| {
-        try player_ai.box.append(pkmn.gen1.helpers.Pokemon.init(mon));
+        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
     }
 
     var b = battle;
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
-    const root: *player_ai.DecisionNode = try player_ai.optimal_decision_tree(b, result, alloc);
-    player_ai.free_tree(root, alloc);
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, &box, alloc);
+    builder.free_tree(root, alloc);
 }

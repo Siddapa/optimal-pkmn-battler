@@ -9,8 +9,6 @@ const effects = Move.Effect;
 
 const tools = @import("tools.zig");
 
-pub var team: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
-
 const ChoiceData = struct {
     choice: pkmn.Choice,
     priority: i8,

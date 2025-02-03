@@ -2,22 +2,19 @@ const std = @import("std");
 const print = std.debug.print;
 const json = std.json;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var import_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var import_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
+var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 
-const String = @import("string").String;
-
+const builder = @import("tree/builder.zig");
 const pkmn = @import("pkmn");
-const tools = @import("tools.zig");
-const player_ai = @import("player_ai.zig");
-const enemy_ai = @import("enemy_ai.zig");
 const import = @import("import.zig");
 
 var tree_gen_alloc = gpa.allocator();
 var import_alloc: std.mem.Allocator = undefined;
 var tree_prep_alloc: std.mem.Allocator = undefined;
 
-var decision_tree_instance: ?*player_ai.DecisionNode = null;
+var decision_tree_instance: ?*builder.DecisionNode = null;
+var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 var player_imports: std.ArrayList(import.PokemonImport) = undefined;
 var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
 
@@ -25,22 +22,22 @@ pub const pkmn_options = pkmn.Options{ .internal = true };
 
 export fn init() void {
     import_alloc = import_arena.allocator();
-    player_ai.box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
-    player_imports = std.ArrayList(import.PokemonImport).init(std.heap.page_allocator);
-    enemy_imports = std.ArrayList(import.PokemonImport).init(std.heap.page_allocator);
+    box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.wasm_allocator);
+    player_imports = std.ArrayList(import.PokemonImport).init(std.heap.wasm_allocator);
+    enemy_imports = std.ArrayList(import.PokemonImport).init(std.heap.wasm_allocator);
 }
 
 export fn clear() void {
-    import_arena.deinit();
-    player_ai.box.clearAndFree();
+    _ = import_arena.reset(.free_all);
+    box.clearAndFree();
     player_imports.clearAndFree();
     enemy_imports.clearAndFree();
 }
 
-export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
-    if (decision_tree_instance) |foo| player_ai.free_tree(foo, tree_gen_alloc);
-    player_ai.box.clearAndFree();
-    tree_prep_arena.deinit();
+export fn generateOptimizedDecisionTree(lead: u8) ?*builder.DecisionNode {
+    if (decision_tree_instance) |foo| builder.free_tree(foo, tree_gen_alloc);
+    box.clearAndFree();
+    _ = tree_prep_arena.reset(.free_all);
     tree_prep_alloc = tree_prep_arena.allocator();
 
     var lead_pokemon: pkmn.gen1.helpers.Pokemon = undefined;
@@ -65,7 +62,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
             if (i == lead) {
                 lead_pokemon = new_pokemon;
             }
-            player_ai.box.append(pkmn.gen1.helpers.Pokemon.init(new_pokemon)) catch continue;
+            box.append(pkmn.gen1.helpers.Pokemon.init(new_pokemon)) catch continue;
         }
     }
 
@@ -107,18 +104,18 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
     // Need an empty result and switch ins for generating tree
     const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch return null;
 
-    // const root: *player_ai.DecisionNode = tree_gen_alloc.create(player_ai.DecisionNode) catch return null;
+    // const root: *builder.DecisionNode = tree_gen_alloc.create(builder.DecisionNode) catch return null;
     // root.* = .{
     //     .battle = battle,
     //     .team = .{ 0, -1, -1, -1, -1, -1 },
     //     .result = result,
     //     .previous_node = null,
-    //     .next_turns = std.ArrayList(player_ai.TurnChoices).init(tree_gen_alloc),
+    //     .next_turns = std.ArrayList(builder.TurnChoices).init(tree_gen_alloc),
     // };
-    // player_ai.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
+    // builder.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
     // return root;
 
-    if (player_ai.optimal_decision_tree(battle, result, tree_gen_alloc)) |decision_tree| {
+    if (builder.optimal_decision_tree(battle, result, &box, tree_gen_alloc)) |decision_tree| {
         decision_tree_instance = decision_tree;
         return decision_tree_instance;
     } else |err| {
@@ -127,31 +124,31 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*player_ai.DecisionNode {
     }
 }
 
-export fn getNextNode(curr_node: *player_ai.DecisionNode, index: usize) *player_ai.DecisionNode {
+export fn getNextNode(curr_node: *builder.DecisionNode, index: usize) *builder.DecisionNode {
     return curr_node.next_turns.items[index].next_node;
 }
 
-export fn getNumOfNextTurns(curr_node: *player_ai.DecisionNode) usize {
+export fn getNumOfNextTurns(curr_node: *builder.DecisionNode) usize {
     return curr_node.next_turns.items.len;
 }
 
-export fn getScore(curr_node: *player_ai.DecisionNode) u16 {
+export fn getScore(curr_node: *builder.DecisionNode) u16 {
     return curr_node.score;
 }
 
-export fn getResult(curr_node: *player_ai.DecisionNode) i8 {
+export fn getResult(curr_node: *builder.DecisionNode) i8 {
     return if (curr_node.result.type == .None) 1 else 0;
 }
 
-export fn getTeam(curr_node: *player_ai.DecisionNode, out: [*]i8) u8 {
+export fn getTeam(curr_node: *builder.DecisionNode, out: [*]i8) u8 {
     for (0..6) |i| {
         out[i] = curr_node.team[i];
     }
     return 6;
 }
 
-export fn getTransitionChoice(curr_node: *player_ai.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
-    const turn_choice: player_ai.TurnChoices = curr_node.next_turns.items[index];
+export fn getTransitionChoice(curr_node: *builder.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
+    const turn_choice: builder.TurnChoices = curr_node.next_turns.items[index];
     const choice: pkmn.Choice = turn_choice.choices[if (player) 0 else 1];
     const side: pkmn.Player = if (player) .P1 else .P2;
     var details: []const u8 = undefined;
@@ -190,14 +187,14 @@ export fn getTransitionChoice(curr_node: *player_ai.DecisionNode, index: usize, 
     return details.len;
 }
 
-export fn getSpecies(curr_node: *player_ai.DecisionNode, player: bool, out: [*]u8) usize {
+export fn getSpecies(curr_node: *builder.DecisionNode, player: bool, out: [*]u8) usize {
     const side: pkmn.Player = if (player) .P1 else .P2;
     const species_str: []const u8 = @tagName(curr_node.battle.side(side).stored().species);
     @memcpy(out, species_str);
     return species_str.len;
 }
 
-export fn getHP(curr_node: *player_ai.DecisionNode, player: bool) usize {
+export fn getHP(curr_node: *builder.DecisionNode, player: bool) usize {
     const side: pkmn.Player = if (player) .P1 else .P2;
     return curr_node.battle.side(side).stored().hp;
 }
@@ -213,5 +210,3 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
         }
     }
 }
-
-pub fn main() !void {}

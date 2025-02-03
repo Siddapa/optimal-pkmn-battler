@@ -5,8 +5,6 @@ const pkmn = @import("pkmn");
 const tools = @import("tools.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
-pub var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
-
 // Maximum number of levels to build tree to
 const MAX_TURNLEVEL: u16 = 50;
 
@@ -62,7 +60,12 @@ pub const Update = struct {
     result: pkmn.Result,
 };
 
-pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), starting_result: pkmn.Result, alloc: std.mem.Allocator) !*DecisionNode {
+pub fn optimal_decision_tree(
+    starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
+    starting_result: pkmn.Result,
+    box: *std.ArrayList(pkmn.gen1.Pokemon),
+    alloc: std.mem.Allocator,
+) !*DecisionNode {
     const root: *DecisionNode = try alloc.create(DecisionNode);
     root.* = .{
         .battle = starting_battle,
@@ -86,7 +89,7 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
         // Extend leaves of scoring_nodes to maximize level for scoring
         for (scoring_nodes.items) |scoring_node| {
             if (scoring_node.result.type == .None) {
-                try exhaustive_decision_tree(scoring_node, 1, alloc);
+                try exhaustive_decision_tree(scoring_node, box, 1, alloc);
 
                 if (scoring_node.previous_node) |previous_node| {
                     const tc, _ = try get_parent_turnchoice(previous_node, scoring_node);
@@ -132,7 +135,12 @@ pub fn optimal_decision_tree(starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), 
     return root;
 }
 
-pub fn exhaustive_decision_tree(curr_node: *DecisionNode, level: u16, alloc: std.mem.Allocator) !void {
+pub fn exhaustive_decision_tree(
+    curr_node: *DecisionNode,
+    box: *std.ArrayList(pkmn.gen1.Pokemon),
+    level: u16,
+    alloc: std.mem.Allocator,
+) !void {
     if (level < LOOKAHEAD + 1) {
         if (curr_node.next_turns.items.len == 0) {
             // Select durations from transition of curr_node's parent to itself
@@ -176,6 +184,7 @@ pub fn exhaustive_decision_tree(curr_node: *DecisionNode, level: u16, alloc: std
                         });
                         try exhaustive_decision_tree(
                             child_node,
+                            box,
                             level + 1,
                             alloc,
                         );
@@ -227,6 +236,7 @@ pub fn exhaustive_decision_tree(curr_node: *DecisionNode, level: u16, alloc: std
                                     });
                                     try exhaustive_decision_tree(
                                         child_node,
+                                        box,
                                         level + 1,
                                         alloc,
                                     );
@@ -238,7 +248,7 @@ pub fn exhaustive_decision_tree(curr_node: *DecisionNode, level: u16, alloc: std
             }
         } else {
             for (curr_node.next_turns.items) |next_turn| {
-                try exhaustive_decision_tree(next_turn.next_node, level + 1, alloc);
+                try exhaustive_decision_tree(next_turn.next_node, box, level + 1, alloc);
             }
         }
     }
@@ -455,7 +465,7 @@ fn get_parent_turnchoice(parent_node: *DecisionNode, child_node: *DecisionNode) 
     return error.NoParent;
 }
 
-pub fn count_nodes(curr_node: *DecisionNode) u32 {
+fn count_nodes(curr_node: *DecisionNode) u32 {
     var sum: u32 = 1;
     for (curr_node.next_turns.items) |next_turn| {
         sum += count_nodes(next_turn.next_node);

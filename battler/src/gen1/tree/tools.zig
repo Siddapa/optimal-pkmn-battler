@@ -7,7 +7,7 @@ var alloc = gpa.allocator();
 const pkmn = @import("pkmn");
 const Pokemon = pkmn.gen1.helpers.Pokemon;
 
-const player_ai = @import("player_ai.zig");
+const builder = @import("builder.zig");
 const enemy_ai = @import("enemy_ai.zig");
 
 pub fn battle_details(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), hp: bool, moves: bool) void {
@@ -66,9 +66,7 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     return battle;
 }
 
-pub fn random_vs_enemy_ai() !void {}
-
-pub fn traverse_decision_tree(start_node: *player_ai.DecisionNode) !void {
+pub fn traverse_decision_tree(start_node: *builder.DecisionNode) !void {
     var curr_node = start_node;
     while (true) {
         // Spacing between node selections
