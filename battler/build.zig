@@ -8,25 +8,35 @@ pub fn build(b: *std.Build) !void {
 
     const default_options = b.standardTargetOptions(.{});
 
+    const wasm_source = try std.fmt.allocPrint(alloc, "src/{s}/wasm/runners.zig", .{generation});
+    defer alloc.free(wasm_source);
     const wasm = b.addExecutable(.{
         .name = generation,
-        .root_source_file = b.path(try std.fmt.allocPrint(alloc, "src/{s}/wasm_runners.zig", .{generation})),
+        .root_source_file = b.path(wasm_source),
         .optimize = .Debug,
         .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi }),
     });
     wasm.rdynamic = true;
     wasm.entry = .disabled;
 
+    const train_name = try std.fmt.allocPrint(alloc, "{s}_train", .{generation});
+    const train_source = try std.fmt.allocPrint(alloc, "src/{s}/model/train.zig", .{generation});
+    defer alloc.free(train_name);
+    defer alloc.free(train_source);
     const train = b.addExecutable(.{
-        .name = try std.fmt.allocPrint(alloc, "{s}_train", .{generation}),
-        .root_source_file = b.path(try std.fmt.allocPrint(alloc, "src/{s}/model/train.zig", .{generation})),
+        .name = train_name,
+        .root_source_file = b.path(train_source),
         .optimize = .Debug,
         .target = default_options,
     });
 
+    const tests_name = try std.fmt.allocPrint(alloc, "{s}_tests", .{generation});
+    const tests_source = try std.fmt.allocPrint(alloc, "src/{s}/tests.zig", .{generation});
+    defer alloc.free(tests_name);
+    defer alloc.free(tests_source);
     const tests = b.addTest(.{
-        .name = try std.fmt.allocPrint(alloc, "{s}_tests", .{generation}),
-        .root_source_file = b.path(try std.fmt.allocPrint(alloc, "src/{s}/tree/tests.zig", .{generation})),
+        .name = tests_name,
+        .root_source_file = b.path(tests_source),
         .filters = test_filters,
     });
 
@@ -35,6 +45,22 @@ pub fn build(b: *std.Build) !void {
     wasm.root_module.addImport("pkmn", pkmn.module("pkmn"));
     train.root_module.addImport("pkmn", pkmn.module("pkmn"));
     tests.root_module.addImport("pkmn", pkmn.module("pkmn"));
+
+    const tree_source = try std.fmt.allocPrint(alloc, "src/{s}/tree/builder.zig", .{generation});
+    defer alloc.free(tree_source);
+    const tree_import = [1]std.Build.Module.Import{.{ .name = "pkmn", .module = pkmn.module("pkmn") }};
+    wasm.root_module.addAnonymousImport("tree", .{
+        .root_source_file = b.path(tree_source),
+        .imports = &tree_import,
+    });
+    train.root_module.addAnonymousImport("tree", .{
+        .root_source_file = b.path(tree_source),
+        .imports = &tree_import,
+    });
+    tests.root_module.addAnonymousImport("tree", .{
+        .root_source_file = b.path(tree_source),
+        .imports = &tree_import,
+    });
 
     b.installArtifact(wasm);
     b.installArtifact(train);

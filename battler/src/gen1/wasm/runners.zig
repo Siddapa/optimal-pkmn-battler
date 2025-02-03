@@ -5,7 +5,8 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var import_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 
-const builder = @import("tree/builder.zig");
+// const builder = @import("tree/builder.zig");
+const tree = @import("tree");
 const pkmn = @import("pkmn");
 const import = @import("import.zig");
 
@@ -13,7 +14,7 @@ var tree_gen_alloc = gpa.allocator();
 var import_alloc: std.mem.Allocator = undefined;
 var tree_prep_alloc: std.mem.Allocator = undefined;
 
-var decision_tree_instance: ?*builder.DecisionNode = null;
+var decision_tree_instance: ?*tree.DecisionNode = null;
 var box: std.ArrayList(pkmn.gen1.Pokemon) = undefined;
 var player_imports: std.ArrayList(import.PokemonImport) = undefined;
 var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
@@ -34,8 +35,8 @@ export fn clear() void {
     enemy_imports.clearAndFree();
 }
 
-export fn generateOptimizedDecisionTree(lead: u8) ?*builder.DecisionNode {
-    if (decision_tree_instance) |foo| builder.free_tree(foo, tree_gen_alloc);
+export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
+    if (decision_tree_instance) |foo| tree.free_tree(foo, tree_gen_alloc);
     box.clearAndFree();
     _ = tree_prep_arena.reset(.free_all);
     tree_prep_alloc = tree_prep_arena.allocator();
@@ -104,18 +105,18 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*builder.DecisionNode {
     // Need an empty result and switch ins for generating tree
     const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch return null;
 
-    // const root: *builder.DecisionNode = tree_gen_alloc.create(builder.DecisionNode) catch return null;
+    // const root: *tree.DecisionNode = tree_gen_alloc.create(tree.DecisionNode) catch return null;
     // root.* = .{
     //     .battle = battle,
     //     .team = .{ 0, -1, -1, -1, -1, -1 },
     //     .result = result,
     //     .previous_node = null,
-    //     .next_turns = std.ArrayList(builder.TurnChoices).init(tree_gen_alloc),
+    //     .next_turns = std.ArrayList(tree.TurnChoices).init(tree_gen_alloc),
     // };
-    // builder.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
+    // tree.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
     // return root;
 
-    if (builder.optimal_decision_tree(battle, result, &box, tree_gen_alloc)) |decision_tree| {
+    if (tree.optimal_decision_tree(battle, result, &box, tree_gen_alloc)) |decision_tree| {
         decision_tree_instance = decision_tree;
         return decision_tree_instance;
     } else |err| {
@@ -124,31 +125,31 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*builder.DecisionNode {
     }
 }
 
-export fn getNextNode(curr_node: *builder.DecisionNode, index: usize) *builder.DecisionNode {
+export fn getNextNode(curr_node: *tree.DecisionNode, index: usize) *tree.DecisionNode {
     return curr_node.next_turns.items[index].next_node;
 }
 
-export fn getNumOfNextTurns(curr_node: *builder.DecisionNode) usize {
+export fn getNumOfNextTurns(curr_node: *tree.DecisionNode) usize {
     return curr_node.next_turns.items.len;
 }
 
-export fn getScore(curr_node: *builder.DecisionNode) u16 {
+export fn getScore(curr_node: *tree.DecisionNode) u16 {
     return curr_node.score;
 }
 
-export fn getResult(curr_node: *builder.DecisionNode) i8 {
+export fn getResult(curr_node: *tree.DecisionNode) i8 {
     return if (curr_node.result.type == .None) 1 else 0;
 }
 
-export fn getTeam(curr_node: *builder.DecisionNode, out: [*]i8) u8 {
+export fn getTeam(curr_node: *tree.DecisionNode, out: [*]i8) u8 {
     for (0..6) |i| {
         out[i] = curr_node.team[i];
     }
     return 6;
 }
 
-export fn getTransitionChoice(curr_node: *builder.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
-    const turn_choice: builder.TurnChoices = curr_node.next_turns.items[index];
+export fn getTransitionChoice(curr_node: *tree.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
+    const turn_choice: tree.TurnChoices = curr_node.next_turns.items[index];
     const choice: pkmn.Choice = turn_choice.choices[if (player) 0 else 1];
     const side: pkmn.Player = if (player) .P1 else .P2;
     var details: []const u8 = undefined;
@@ -187,14 +188,14 @@ export fn getTransitionChoice(curr_node: *builder.DecisionNode, index: usize, pl
     return details.len;
 }
 
-export fn getSpecies(curr_node: *builder.DecisionNode, player: bool, out: [*]u8) usize {
+export fn getSpecies(curr_node: *tree.DecisionNode, player: bool, out: [*]u8) usize {
     const side: pkmn.Player = if (player) .P1 else .P2;
     const species_str: []const u8 = @tagName(curr_node.battle.side(side).stored().species);
     @memcpy(out, species_str);
     return species_str.len;
 }
 
-export fn getHP(curr_node: *builder.DecisionNode, player: bool) usize {
+export fn getHP(curr_node: *tree.DecisionNode, player: bool) usize {
     const side: pkmn.Player = if (player) .P1 else .P2;
     return curr_node.battle.side(side).stored().hp;
 }

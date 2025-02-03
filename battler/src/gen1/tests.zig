@@ -1,12 +1,13 @@
 const std = @import("std");
 const print = std.debug.print;
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const assert = std.debug.assert;
+const alloc = std.testing.allocator;
 
 const pkmn = @import("pkmn");
 
-const builder = @import("builder.zig");
-const enemy_ai = @import("enemy_ai.zig");
-const tools = @import("tools.zig");
+const builder = @import("tree");
+const enemy_ai = builder.enemy_ai;
+const tools = builder.tools;
 
 var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
 var options = pkmn.battle.options(
@@ -88,7 +89,7 @@ test "BoxSwitchTransitions" {
 }
 
 test "OptimalWASM" {
-    print("Optimal1\n", .{});
+    print("OptimalWASM\n", .{});
     const battle = tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
     }, &.{
@@ -106,7 +107,7 @@ test "OptimalWASM" {
 }
 
 test "Exhaust1" {
-    print("Exhaust2\n", .{});
+    print("Exhaust1\n", .{});
     const battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -130,7 +131,7 @@ test "Exhaust1" {
 }
 
 test "Optimal1" {
-    print("Optimal2\n", .{});
+    print("Optimal1\n", .{});
     const battle = tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -187,8 +188,6 @@ test "Random" {
 }
 
 fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !usize {
-    const alloc = gpa.allocator();
-
     var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
 
@@ -206,7 +205,14 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
             tools.print_battle(battle, player_choice, enemy_choice);
             print("\n", .{});
 
-            const updates: []builder.Update = try builder.transitions(battle, player_choice, enemy_choice, options.chance.durations, alloc);
+            const updates: []builder.Update = try builder.transitions(
+                battle,
+                player_choice,
+                enemy_choice,
+                options.chance.durations,
+                alloc,
+            );
+            defer std.testing.allocator.free(updates);
             total_updates += updates.len;
 
             for (updates) |update| {
@@ -224,9 +230,7 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
 }
 
 fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
-    const alloc = gpa.allocator();
-
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
@@ -244,13 +248,13 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
         .next_turns = std.ArrayList(builder.TurnChoices).init(alloc),
     };
     _ = builder.exhaustive_decision_tree(root, &box, 1, alloc) catch null;
+    assert(builder.count_nodes(root) != 0);
+
     builder.free_tree(root, alloc);
 }
 
 fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
-    const alloc = gpa.allocator();
-
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.page_allocator);
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
@@ -260,5 +264,9 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
     const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, &box, alloc);
+
+    const num_of_nodes = builder.count_nodes(root);
+    print("Num Of Nodes: {}\n", .{num_of_nodes});
+
     builder.free_tree(root, alloc);
 }

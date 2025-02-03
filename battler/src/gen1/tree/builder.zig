@@ -2,8 +2,8 @@ const std = @import("std");
 const print = std.debug.print;
 const assert = std.debug.assert;
 const pkmn = @import("pkmn");
-const tools = @import("tools.zig");
-const enemy_ai = @import("enemy_ai.zig");
+pub const tools = @import("tools.zig");
+pub const enemy_ai = @import("enemy_ai.zig");
 
 // Maximum number of levels to build tree to
 const MAX_TURNLEVEL: u16 = 50;
@@ -189,6 +189,8 @@ pub fn exhaustive_decision_tree(
                             alloc,
                         );
                     }
+
+                    alloc.free(new_updates);
                 }
 
                 assert(player_max > 0);
@@ -241,6 +243,8 @@ pub fn exhaustive_decision_tree(
                                         alloc,
                                     );
                                 }
+
+                                alloc.free(new_updates);
                             }
                         }
                     }
@@ -465,7 +469,7 @@ fn get_parent_turnchoice(parent_node: *DecisionNode, child_node: *DecisionNode) 
     return error.NoParent;
 }
 
-fn count_nodes(curr_node: *DecisionNode) u32 {
+pub fn count_nodes(curr_node: *DecisionNode) u32 {
     var sum: u32 = 1;
     for (curr_node.next_turns.items) |next_turn| {
         sum += count_nodes(next_turn.next_node);
