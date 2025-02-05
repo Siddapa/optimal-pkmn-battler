@@ -39,9 +39,9 @@ pub const DecisionNode = struct {
     result: pkmn.Result,
     score: u16 = 0,
     previous_node: ?*DecisionNode = null,
-    next_turns: std.ArrayList(TurnChoices) = undefined,
+    transitions: std.ArrayList(Transition) = undefined,
 };
-pub const TurnChoices = struct {
+pub const Transition = struct {
     choices: [2]pkmn.Choice,
     actions: pkmn.gen1.chance.Actions,
     durations: pkmn.gen1.chance.Durations,
@@ -72,7 +72,7 @@ pub fn optimal_decision_tree(
         .team = .{ 0, -1, -1, -1, -1, -1 },
         .result = starting_result,
         .previous_node = null,
-        .next_turns = std.ArrayList(TurnChoices).init(alloc),
+        .transitions = std.ArrayList(Transition).init(alloc),
     };
     var scoring_nodes = std.ArrayList(*DecisionNode).init(alloc);
     defer scoring_nodes.deinit();
@@ -82,7 +82,7 @@ pub fn optimal_decision_tree(
     var level: u16 = 1;
     while (level < MAX_TURNLEVEL) {
         print("Level: {}\n", .{level});
-        // Must be list of TurnChoices to be compatible with compare function for sorting by score
+        // Must be list of Transition to be compatible with compare function for sorting by score
         var scored_nodes = std.ArrayList(*DecisionNode).init(alloc);
         defer scored_nodes.deinit();
 
@@ -110,8 +110,8 @@ pub fn optimal_decision_tree(
                 const previous_node = delete_node.previous_node orelse continue;
                 _, const tci = try get_parent_turnchoice(previous_node, delete_node);
 
-                // Remove potential_node from parent's next_turns
-                _ = previous_node.next_turns.swapRemove(tci);
+                // Remove potential_node from parent's transitions
+                _ = previous_node.transitions.swapRemove(tci);
                 free_tree(delete_node, alloc);
             }
         }
@@ -120,8 +120,8 @@ pub fn optimal_decision_tree(
         // Save chlidren of scored_nodes as next scoring_nodes
         var new_nodes: usize = 0;
         for (scored_nodes.items) |scored_node| {
-            for (scored_node.next_turns.items) |next_turn| {
-                try scoring_nodes.append(next_turn.next_node);
+            for (scored_node.transitions.items) |transition| {
+                try scoring_nodes.append(transition.next_node);
                 new_nodes += 1;
             }
         }
@@ -142,7 +142,7 @@ pub fn exhaustive_decision_tree(
     alloc: std.mem.Allocator,
 ) !void {
     if (level < LOOKAHEAD + 1) {
-        if (curr_node.next_turns.items.len == 0) {
+        if (curr_node.transitions.items.len == 0) {
             // Select durations from transition of curr_node's parent to itself
             var durations: pkmn.gen1.chance.Durations = undefined;
             if (curr_node.previous_node) |parent| {
@@ -173,9 +173,9 @@ pub fn exhaustive_decision_tree(
                             .team = curr_node.team,
                             .result = new_update.result,
                             .previous_node = curr_node,
-                            .next_turns = std.ArrayList(TurnChoices).init(alloc),
+                            .transitions = std.ArrayList(Transition).init(alloc),
                         };
-                        try curr_node.next_turns.append(.{
+                        try curr_node.transitions.append(.{
                             .choices = .{ player_choice, enemy_choice },
                             .actions = new_update.actions,
                             .durations = new_update.durations,
@@ -227,9 +227,9 @@ pub fn exhaustive_decision_tree(
                                         .team = curr_node.team,
                                         .result = new_update.result,
                                         .previous_node = curr_node,
-                                        .next_turns = std.ArrayList(TurnChoices).init(alloc),
+                                        .transitions = std.ArrayList(Transition).init(alloc),
                                     };
-                                    try curr_node.next_turns.append(.{
+                                    try curr_node.transitions.append(.{
                                         .choices = .{ switch_choice, enemy_choice },
                                         .actions = new_update.actions,
                                         .durations = new_update.durations,
@@ -251,8 +251,8 @@ pub fn exhaustive_decision_tree(
                 }
             }
         } else {
-            for (curr_node.next_turns.items) |next_turn| {
-                try exhaustive_decision_tree(next_turn.next_node, box, level + 1, alloc);
+            for (curr_node.transitions.items) |transition| {
+                try exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
             }
         }
     }
@@ -392,7 +392,7 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
     return updates.toOwnedSlice();
 }
 
-fn score(scoring_node: *DecisionNode, turn_choice: TurnChoices) u16 {
+fn score(scoring_node: *DecisionNode, turn_choice: Transition) u16 {
     var sum: u16 = 0;
 
     const previous_node = scoring_node.previous_node orelse return 0;
@@ -460,10 +460,10 @@ pub fn add_to_team(battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG), new_mon: pkmn.gen1
 
 
 // Returns the index of a turnchoice matching a given child
-fn get_parent_turnchoice(parent_node: *DecisionNode, child_node: *DecisionNode) !struct { TurnChoices, usize } {
-    for (parent_node.next_turns.items, 0..) |next_turn, i| {
-        if (next_turn.next_node == child_node) {
-            return .{next_turn, i};
+fn get_parent_turnchoice(parent_node: *DecisionNode, child_node: *DecisionNode) !struct { Transition, usize } {
+    for (parent_node.transitions.items, 0..) |transition, i| {
+        if (transition.next_node == child_node) {
+            return .{transition, i};
         }
     }
     return error.NoParent;
@@ -471,16 +471,16 @@ fn get_parent_turnchoice(parent_node: *DecisionNode, child_node: *DecisionNode) 
 
 pub fn count_nodes(curr_node: *DecisionNode) u32 {
     var sum: u32 = 1;
-    for (curr_node.next_turns.items) |next_turn| {
-        sum += count_nodes(next_turn.next_node);
+    for (curr_node.transitions.items) |transition| {
+        sum += count_nodes(transition.next_node);
     }
     return sum;
 }
 
 pub fn free_tree(curr_node: *DecisionNode, alloc: std.mem.Allocator) void {
-    for (curr_node.next_turns.items) |next_turn| {
-        free_tree(next_turn.next_node, alloc);
+    for (curr_node.transitions.items) |transition| {
+        free_tree(transition.next_node, alloc);
     }
-    curr_node.next_turns.deinit();
+    curr_node.transitions.deinit();
     alloc.destroy(curr_node);
 }

@@ -111,7 +111,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
     //     .team = .{ 0, -1, -1, -1, -1, -1 },
     //     .result = result,
     //     .previous_node = null,
-    //     .next_turns = std.ArrayList(tree.TurnChoices).init(tree_gen_alloc),
+    //     .transitions = std.ArrayList(tree.Transition).init(tree_gen_alloc),
     // };
     // tree.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
     // return root;
@@ -126,11 +126,11 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
 }
 
 export fn getNextNode(curr_node: *tree.DecisionNode, index: usize) *tree.DecisionNode {
-    return curr_node.next_turns.items[index].next_node;
+    return curr_node.transitions.items[index].next_node;
 }
 
 export fn getNumOfNextTurns(curr_node: *tree.DecisionNode) usize {
-    return curr_node.next_turns.items.len;
+    return curr_node.transitions.items.len;
 }
 
 export fn getScore(curr_node: *tree.DecisionNode) u16 {
@@ -149,7 +149,7 @@ export fn getTeam(curr_node: *tree.DecisionNode, out: [*]i8) u8 {
 }
 
 export fn getTransitionChoice(curr_node: *tree.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
-    const turn_choice: tree.TurnChoices = curr_node.next_turns.items[index];
+    const turn_choice: tree.Transition = curr_node.transitions.items[index];
     const choice: pkmn.Choice = turn_choice.choices[if (player) 0 else 1];
     const side: pkmn.Player = if (player) .P1 else .P2;
     var details: []const u8 = undefined;

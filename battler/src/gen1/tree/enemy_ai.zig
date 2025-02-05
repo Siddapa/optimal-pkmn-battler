@@ -1,6 +1,5 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const print = std.debug.print;
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 
 const pkmn = @import("pkmn");

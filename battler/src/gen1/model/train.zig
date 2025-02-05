@@ -6,7 +6,11 @@ const pkmn = @import("pkmn");
 const builder = @import("tree");
 const tools = builder.tools;
 
+fn battle_scenario() void {}
+
 pub fn main() !void {
+    const writer = std.io.getStdOut().writer();
+
     var rng = pkmn.PSRNG.init(@as(u64, @bitCast(std.time.milliTimestamp())));
 
     const battle = pkmn.gen1.helpers.Battle.random(
@@ -14,7 +18,7 @@ pub fn main() !void {
         .{ .cleric = false, .block = false },
     );
 
-    tools.battle_details(battle, true, true);
+    try tools.battle_details(battle, tools.DetailOptions, writer);
 
     print("{}\n", .{battle});
 }

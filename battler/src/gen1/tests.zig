@@ -1,5 +1,4 @@
 const std = @import("std");
-const print = std.debug.print;
 const assert = std.debug.assert;
 const alloc = std.testing.allocator;
 
@@ -7,7 +6,8 @@ const pkmn = @import("pkmn");
 
 const builder = @import("tree");
 const enemy_ai = builder.enemy_ai;
-const tools = builder.tools;
+
+var writer = std.io.getStdErr().writer();
 
 var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
 var options = pkmn.battle.options(
@@ -17,9 +17,9 @@ var options = pkmn.battle.options(
 );
 
 test "BaseTransitions" {
-    print("Transitions\n", .{});
+    try writer.print("Transitions\n", .{});
 
-    var battle = tools.init_battle(&.{
+    var battle = builder.tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
         .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
     }, &.{
@@ -31,13 +31,13 @@ test "BaseTransitions" {
 
     const total_updates = try run_transitions(battle, result);
 
-    print("# of Updates: {}\n", .{total_updates});
+    try writer.print("# of Updates: {}\n", .{total_updates});
 }
 
 test "EnemySwitchTransitions" {
-    print("EnemySwitchTransitions\n", .{});
+    try writer.print("EnemySwitchTransitions\n", .{});
 
-    var battle = tools.init_battle(&.{
+    var battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
         .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
     }, &.{
@@ -59,24 +59,22 @@ test "EnemySwitchTransitions" {
     // Moves are harcoded so changing initial conditions could break test
     result = try battle.update(player_valid_choices[1], enemy_valid_choices[0], &options);
 
-    tools.battle_details(battle, true, true);
+    try builder.tools.battle_details(battle, builder.tools.DetailOptions{}, writer);
 
     const total_updates = try run_transitions(battle, result);
 
-    print("# of Updates: {}\n", .{total_updates});
+    try writer.print("# of Updates: {}\n", .{total_updates});
 }
 
 test "BoxSwitchTransitions" {
-    print("BoxSwitchTransitions\n", .{});
+    try writer.print("BoxSwitchTransitions\n", .{});
 
-    var battle = tools.init_battle(&.{
+    var battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
     }, &.{
         .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .Flamethrower, .Blizzard, .Peck } },
         .{ .species = .Rhyhorn, .moves = &.{ .Thunderbolt, .Mist, .WaterGun, .Psybeam } },
     });
-
-    //
 
     const result = try battle.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
@@ -85,12 +83,12 @@ test "BoxSwitchTransitions" {
 
     const total_updates = try run_transitions(battle, result);
 
-    print("# of Updates: {}\n", .{total_updates});
+    try writer.print("# of Updates: {}\n", .{total_updates});
 }
 
 test "OptimalWASM" {
-    print("OptimalWASM\n", .{});
-    const battle = tools.init_battle(&.{
+    try writer.print("OptimalWASM\n", .{});
+    const battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
     }, &.{
         .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .HyperBeam, .DrillPeck, .Peck } },
@@ -107,8 +105,8 @@ test "OptimalWASM" {
 }
 
 test "Exhaust1" {
-    print("Exhaust1\n", .{});
-    const battle = tools.init_battle(&.{
+    try writer.print("Exhaust1\n", .{});
+    const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{.Pound} },
@@ -131,8 +129,8 @@ test "Exhaust1" {
 }
 
 test "Optimal1" {
-    print("Optimal1\n", .{});
-    const battle = tools.init_battle(&.{
+    try writer.print("Optimal1\n", .{});
+    const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{.Pound} },
@@ -154,8 +152,8 @@ test "Optimal1" {
 }
 
 test "Random" {
-    print("Random\n", .{});
-    var battle = tools.init_battle(&.{
+    try writer.print("Random\n", .{});
+    var battle = builder.tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{.Pound} },
@@ -179,12 +177,13 @@ test "Random" {
         const n2 = random.uintLessThan(u8, max2);
         c2 = enemy_choices[n2];
 
-        tools.print_battle(battle, c1, c2);
-        print("\n\n", .{});
+        try builder.tools.battle_details(battle, builder.tools.DetailOptions{}, writer);
+        // TODO Also display transition
+        try writer.print("\n\n", .{});
 
         result = battle.update(c1, c2, &options) catch pkmn.Result{};
     }
-    print("{}\n", .{result.type});
+    try writer.print("{}\n", .{result.type});
 }
 
 fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !usize {
@@ -197,13 +196,12 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices);
     const enemy_valid_choices = enemy_choices[0..enemy_max];
 
-    print("Enemy Valid Choices: {any}\n", .{enemy_valid_choices});
-
     var total_updates: usize = 0;
     for (player_valid_choices) |player_choice| {
         for (enemy_valid_choices) |enemy_choice| {
-            tools.print_battle(battle, player_choice, enemy_choice);
-            print("\n", .{});
+            try builder.tools.battle_details(battle, builder.tools.DetailOptions{}, writer);
+            // TODO Also display transition
+            try writer.print("\n", .{});
 
             const updates: []builder.Update = try builder.transitions(
                 battle,
@@ -216,13 +214,15 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
             total_updates += updates.len;
 
             for (updates) |update| {
-                print("Actions: {}\n", .{update.actions});
-                print("P1: {} {}\n", .{ update.actions.p1.hit, update.actions.p1.critical_hit });
-                print("P2: {} {}\n", .{ update.actions.p2.hit, update.actions.p2.critical_hit });
-                tools.battle_details(update.battle, true, false);
-                print("\n", .{});
+                try writer.print("Actions: {}\n", .{update.actions});
+                try writer.print("P1: {} {}\n", .{ update.actions.p1.hit, update.actions.p1.critical_hit });
+                try writer.print("P2: {} {}\n", .{ update.actions.p2.hit, update.actions.p2.critical_hit });
+
+                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions{}, writer);
+
+                try writer.print("\n", .{});
             }
-            print("\n", .{});
+            try writer.print("\n", .{});
         }
     }
 
@@ -245,7 +245,7 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
         .team = .{ 0, -1, -1, -1, -1, -1 },
         .result = result,
         .previous_node = null,
-        .next_turns = std.ArrayList(builder.TurnChoices).init(alloc),
+        .transitions = std.ArrayList(builder.Transition).init(alloc),
     };
     _ = builder.exhaustive_decision_tree(root, &box, 1, alloc) catch null;
     assert(builder.count_nodes(root) != 0);
@@ -266,7 +266,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, &box, alloc);
 
     const num_of_nodes = builder.count_nodes(root);
-    print("Num Of Nodes: {}\n", .{num_of_nodes});
+    try writer.print("Num Of Nodes: {}\n", .{num_of_nodes});
 
     builder.free_tree(root, alloc);
 }
