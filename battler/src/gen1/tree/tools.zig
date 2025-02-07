@@ -11,17 +11,28 @@ const enemy_ai = @import("enemy_ai.zig");
 
 pub const DetailOptions = struct {
     player: ?bool = null,
-    hp: bool = true,
-    stats: bool = true,
-    boosts: bool = true,
-    status: bool = true,
-    typing: bool = true,
-    moves: bool = true,
+    hp: bool = false,
+    stats: bool = false,
+    boosts: bool = false,
+    status: bool = false,
+    typing: bool = false,
+    moves: bool = false,
+
+    pub fn all() DetailOptions {
+        return .{
+            .hp = true,
+            .stats = true,
+            .boosts = true,
+            .status = true,
+            .typing = true,
+            .moves = true,
+        };
+    }
+    // TODO Volatiles
 };
 
 pub fn battle_details(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), options: DetailOptions, writer: anytype) !void {
     try side_details(battle.side(.P1), options, writer);
-    try writer.print("\n", .{});
     try side_details(battle.side(.P2), options, writer);
     try writer.print("\n", .{});
 }
@@ -30,8 +41,9 @@ pub fn side_details(side: *const pkmn.gen1.Side, options: DetailOptions, writer:
     const active_p = side.active;
     const p = side.stored();
 
-    try writer.print("Name: {s}\n", .{
+    try writer.print("Name: {s} ({})\n", .{
         @tagName(p.species),
+        p.level,
     });
 
     if (options.hp) try writer.print("HP: {}/{}\n", .{
@@ -45,6 +57,8 @@ pub fn side_details(side: *const pkmn.gen1.Side, options: DetailOptions, writer:
         p.stats.spc,
         p.stats.spe,
     });
+
+    // TODO Modified stats from active
 
     if (options.boosts) try writer.print("Boosts - Atk: {: >3}, Def: {: >3}, Spc: {: >3}, Spe: {: >3}, Accuracy: {}, Evasion: {}\n", .{
         active_p.boosts.atk,
@@ -125,7 +139,7 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
                 }
             }
         }
-        try battle_details(curr_node.battle, DetailOptions{}, writer);
+        try battle_details(curr_node.battle, DetailOptions.all(), writer);
         // TODO Print transitions as well
         try writer.print("Last Damage: {}\n", .{curr_node.battle.last_damage});
 

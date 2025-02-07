@@ -59,7 +59,7 @@ test "EnemySwitchTransitions" {
     // Moves are harcoded so changing initial conditions could break test
     result = try battle.update(player_valid_choices[1], enemy_valid_choices[0], &options);
 
-    try builder.tools.battle_details(battle, builder.tools.DetailOptions{}, writer);
+    try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), writer);
 
     const total_updates = try run_transitions(battle, result);
 
@@ -177,7 +177,7 @@ test "Random" {
         const n2 = random.uintLessThan(u8, max2);
         c2 = enemy_choices[n2];
 
-        try builder.tools.battle_details(battle, builder.tools.DetailOptions{}, writer);
+        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), writer);
         // TODO Also display transition
         try writer.print("\n\n", .{});
 
@@ -199,7 +199,7 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     var total_updates: usize = 0;
     for (player_valid_choices) |player_choice| {
         for (enemy_valid_choices) |enemy_choice| {
-            try builder.tools.battle_details(battle, builder.tools.DetailOptions{}, writer);
+            try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), writer);
             // TODO Also display transition
             try writer.print("\n", .{});
 
@@ -218,7 +218,7 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
                 try writer.print("P1: {} {}\n", .{ update.actions.p1.hit, update.actions.p1.critical_hit });
                 try writer.print("P2: {} {}\n", .{ update.actions.p2.hit, update.actions.p2.critical_hit });
 
-                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions{}, writer);
+                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions.all(), writer);
 
                 try writer.print("\n", .{});
             }

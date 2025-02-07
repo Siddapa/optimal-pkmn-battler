@@ -3,8 +3,8 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var alloc = gpa.allocator();
 
 pub fn build(b: *std.Build) !void {
-    const test_filters = b.option([]const []const u8, "test-filters", "Skip tests that do not match any filter") orelse &[0][]const u8{};
     const generation = b.option([]const u8, "generation", "Specify which generation") orelse "gen1";
+    const test_filters = b.option([]const []const u8, "test-filters", "Skip tests that do not match any filter") orelse &[0][]const u8{};
 
     const default_options = b.standardTargetOptions(.{});
 
@@ -70,6 +70,8 @@ pub fn build(b: *std.Build) !void {
     const tests_step = b.step("test", "Run tests.zig");
 
     const run_train = b.addRunArtifact(train);
+    if (b.args) |args| run_train.addArgs(args);
+
     const run_tests = b.addRunArtifact(tests);
     run_tests.has_side_effects = true;
 
