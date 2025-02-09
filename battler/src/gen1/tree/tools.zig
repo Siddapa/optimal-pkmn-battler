@@ -166,6 +166,7 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
         }
 
         // Takes a single character (u8) for processing next node to follow
+        // TODO Could reduce buf to 1 character and print "Failed to Read Line!" on failed read/no input
         var input_buf: [10]u8 = undefined;
         const reader = std.io.getStdIn().reader();
         if (try reader.readUntilDelimiterOrEof(input_buf[0..], '\n')) |user_input| {
