@@ -9,7 +9,7 @@ pub const enemy_ai = @import("enemy_ai.zig");
 const MAX_TURNLEVEL: u16 = 50;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u16 = 1;
+const LOOKAHEAD: u4 = 1;
 
 // Maximum number of nodes to optimize for at a given level
 const K_LARGEST: u16 = 1;
@@ -89,10 +89,10 @@ pub fn optimal_decision_tree(
         // Extend leaves of scoring_nodes to maximize level for scoring
         for (scoring_nodes.items) |scoring_node| {
             if (scoring_node.result.type == .None) {
-                try exhaustive_decision_tree(scoring_node, box, 1, alloc);
+                try exhaustive_decision_tree(scoring_node, box, 1, LOOKAHEAD, alloc);
 
                 if (scoring_node.previous_node) |previous_node| {
-                    const tc, _ = try get_parent_turnchoice(previous_node, scoring_node);
+                    const tc, _ = try get_parent_transition(previous_node, scoring_node);
                     scoring_node.score = score(scoring_node, tc);
                 }
             }
@@ -108,7 +108,7 @@ pub fn optimal_decision_tree(
             while (i < (scored_len - K_LARGEST)) : (i += 1) {
                 const delete_node = scored_nodes.swapRemove(K_LARGEST);
                 const previous_node = delete_node.previous_node orelse continue;
-                _, const tci = try get_parent_turnchoice(previous_node, delete_node);
+                _, const tci = try get_parent_transition(previous_node, delete_node);
 
                 // Remove potential_node from parent's transitions
                 _ = previous_node.transitions.swapRemove(tci);
@@ -139,14 +139,15 @@ pub fn exhaustive_decision_tree(
     curr_node: *DecisionNode,
     box: *std.ArrayList(pkmn.gen1.Pokemon),
     level: u16,
+    lookahead: u4,
     alloc: std.mem.Allocator,
 ) !void {
-    if (level < LOOKAHEAD + 1) {
+    if (level < lookahead + 1) {
         if (curr_node.transitions.items.len == 0) {
             // Select durations from transition of curr_node's parent to itself
             var durations: pkmn.gen1.chance.Durations = undefined;
             if (curr_node.previous_node) |parent| {
-                const tc, _ = try get_parent_turnchoice(parent, curr_node);
+                const tc, _ = try get_parent_transition(parent, curr_node);
                 durations = tc.durations;
             } else {
                 durations = options.chance.durations;
@@ -186,6 +187,7 @@ pub fn exhaustive_decision_tree(
                             child_node,
                             box,
                             level + 1,
+                            lookahead,
                             alloc,
                         );
                     }
@@ -240,6 +242,7 @@ pub fn exhaustive_decision_tree(
                                         child_node,
                                         box,
                                         level + 1,
+                                        lookahead,
                                         alloc,
                                     );
                                 }
@@ -252,7 +255,7 @@ pub fn exhaustive_decision_tree(
             }
         } else {
             for (curr_node.transitions.items) |transition| {
-                try exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
+                try exhaustive_decision_tree(transition.next_node, box, level + 1, lookahead, alloc);
             }
         }
     }
@@ -460,7 +463,7 @@ pub fn add_to_team(battle: *pkmn.gen1.Battle(pkmn.gen1.PRNG), new_mon: pkmn.gen1
 
 
 // Returns the index of a turnchoice matching a given child
-fn get_parent_turnchoice(parent_node: *DecisionNode, child_node: *DecisionNode) !struct { Transition, usize } {
+pub fn get_parent_transition(parent_node: *DecisionNode, child_node: *DecisionNode) !struct { Transition, usize } {
     for (parent_node.transitions.items, 0..) |transition, i| {
         if (transition.next_node == child_node) {
             return .{transition, i};

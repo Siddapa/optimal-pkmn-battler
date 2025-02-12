@@ -247,7 +247,7 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
         .previous_node = null,
         .transitions = std.ArrayList(builder.Transition).init(alloc),
     };
-    _ = builder.exhaustive_decision_tree(root, &box, 1, alloc) catch null;
+    _ = builder.exhaustive_decision_tree(root, &box, 1, 1, alloc) catch null;
     assert(builder.count_nodes(root) != 0);
 
     builder.free_tree(root, alloc);

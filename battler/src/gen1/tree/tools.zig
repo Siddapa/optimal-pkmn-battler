@@ -109,7 +109,8 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     assert(0 <= team1.len and team1.len <= 6);
     assert(0 <= team2.len and team2.len <= 6);
 
-    var prng = (if (@hasDecl(std, "Random")) std.Random else std.rand).DefaultPrng.init(1234);
+    const curr_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+    var prng = (if (@hasDecl(std, "Random")) std.Random else std.rand).DefaultPrng.init(curr_time);
     var random = prng.random();
 
     const battle = pkmn.gen1.helpers.Battle.init(
