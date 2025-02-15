@@ -29,6 +29,7 @@ pub fn collect_training_data(
         const player_pre = convert_pokemon(init_battle.side(.P1));
         const enemy_pre = convert_pokemon(init_battle.side(.P2));
 
+        // TODO Rewrite to handle EOF as an if condition rather than an error check
         while (convert_transition(init_battle, datain)) |converted| {
             var features, const score = converted;
             features.player_pre = player_pre;

@@ -78,12 +78,62 @@ fn count_features(curr_struct: anytype) u32 {
     return count;
 }
 
-// predictions (m x 1) = X (m x k+1) * thetas (k+1 x 1)
+pub fn normalize(X: *[]TransitionFeatures, alloc: std.mem.Allocator) !void {
+    var means = std.ArrayList(ftype).init(alloc);
+    var std_devs = std.ArrayList(ftype).init(alloc);
+    defer means.deinit();
+    defer std_devs.deinit();
+
+    for (X.*) |transition| {
+        var mean: ftype = 0;
+
+        inline for (std.meta.fields(TransitionFeatures)) |transition_field| {
+            const sub_feature = @field(transition, transition_field.name);
+            inline for (std.meta.fields(@TypeOf(sub_feature))) |feature_field| {
+                const value: ftype = @field(sub_feature, feature_field.name);
+                mean += value;
+            }
+        }
+        try means.append(mean / @as(ftype, @floatFromInt(k - 1)));
+    }
+
+    for (X.*, 0..) |transition, i| {
+        var std_dev: ftype = 0;
+        const mean: ftype = means.items[i];
+
+        inline for (std.meta.fields(TransitionFeatures)) |transition_field| {
+            const sub_feature = @field(transition, transition_field.name);
+            inline for (std.meta.fields(@TypeOf(sub_feature))) |feature_field| {
+                const value: ftype = @field(sub_feature, feature_field.name);
+                std_dev += (value - mean) * (value - mean);
+            }
+        }
+        std_dev = @sqrt(std_dev / (k - 1));
+        try std_devs.append(std_dev);
+    }
+
+    for (X.*, 0..) |transition, i| {
+        const mean: ftype = means.items[i];
+        const std_dev: ftype = std_devs.items[i];
+
+        inline for (std.meta.fields(TransitionFeatures)) |transition_field| {
+            const sub_feature = @field(transition, transition_field.name);
+            inline for (std.meta.fields(@TypeOf(sub_feature))) |feature_field| {
+                const value: ftype = @field(sub_feature, feature_field.name);
+                // Reaccess field to change original slice
+                @field(@field(X.*[i], transition_field.name), feature_field.name) = (value - mean) / std_dev;
+            }
+        }
+    }
+}
+
+// predictions (m x 1) = X (m x k) * thetas (k x 1)
 pub fn predict(X: []TransitionFeatures, thetas: [k]ftype, alloc: std.mem.Allocator) ![]ftype {
     var predictions = std.ArrayList(ftype).init(alloc);
     errdefer predictions.deinit();
 
     for (X) |transition| {
+        // Start prediction for a transition with bias term (first theta)
         var linear_comb: ftype = thetas[0];
         var theta_index: usize = 1;
 
@@ -92,9 +142,8 @@ pub fn predict(X: []TransitionFeatures, thetas: [k]ftype, alloc: std.mem.Allocat
 
             inline for (std.meta.fields(@TypeOf(sub_feature))) |feature_field| {
                 const value: ftype = @field(sub_feature, feature_field.name);
-                const theta = thetas[@as(usize, theta_index)];
 
-                linear_comb += value * theta;
+                linear_comb += value * thetas[theta_index];
                 theta_index += 1;
             }
         }
@@ -105,7 +154,7 @@ pub fn predict(X: []TransitionFeatures, thetas: [k]ftype, alloc: std.mem.Allocat
     return predictions.toOwnedSlice();
 }
 
-// cost (k+1 x 1) =  sum([[X (m x k+1) * theta (k+1 x 1)] - y (m x 1)] ** 2, (m x 1)) (1 x 1)
+// cost (k x 1) =  sum([[X (m x k) * theta (k x 1)] - y (m x 1)] ** 2, (m x 1)) (1 x 1)
 pub fn calc_cost(X: []TransitionFeatures, y: []ftype, thetas: [k]ftype, alloc: std.mem.Allocator) !ftype {
     const m = @as(ftype, @floatFromInt(X.len));
 
@@ -126,7 +175,7 @@ pub fn calc_cost(X: []TransitionFeatures, y: []ftype, thetas: [k]ftype, alloc: s
     return cost * normalizer;
 }
 
-// gradients (k+1 x 1) =  X^T (k+1 x m) * [[X (m x k+1) * theta (k+1 x 1)] - y (m x 1)]
+// gradients (k x 1) =  X^T (k x m) * [[X (m x k) * theta (k x 1)] - y (m x 1)]
 pub fn update_thetas(X: []TransitionFeatures, y: []ftype, thetas: [k]ftype, alpha: ftype, alloc: std.mem.Allocator) ![k]ftype {
     const m = X.len;
     const normalizer: ftype = alpha / @as(ftype, @floatFromInt(m));
@@ -146,8 +195,9 @@ pub fn update_thetas(X: []TransitionFeatures, y: []ftype, thetas: [k]ftype, alph
     // is update per TransitionFeature
     var gradients = [_]ftype{0} ** k;
     for (errors.items) |f_error| {
+        // gradients[0] += f_error;
         for (X) |transition| {
-            var i: usize = 0;
+            var i: usize = 1;
             inline for (std.meta.fields(TransitionFeatures)) |transition_field| {
                 const sub_feature = @field(transition, transition_field.name);
 

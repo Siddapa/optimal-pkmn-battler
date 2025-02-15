@@ -28,81 +28,96 @@ pub const DetailOptions = struct {
             .moves = true,
         };
     }
+
+    pub fn no_moves() DetailOptions {
+        return .{
+            .hp = true,
+            .stats = true,
+            .boosts = true,
+            .status = true,
+            .typing = true,
+            .moves = false,
+        };
+    }
     // TODO Volatiles
 };
 
 pub fn battle_details(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), options: DetailOptions, writer: anytype) !void {
     try side_details(battle.side(.P1), options, writer);
+    try writer.writeAll("\n");
     try side_details(battle.side(.P2), options, writer);
-    try writer.print("\n", .{});
 }
 
 pub fn side_details(side: *const pkmn.gen1.Side, options: DetailOptions, writer: anytype) !void {
-    const active_p = side.active;
-    const p = side.stored();
+    const active = side.active;
+    const stored = side.stored();
 
     try writer.print("Name: {s} ({})\n", .{
-        @tagName(p.species),
-        p.level,
+        @tagName(stored.species),
+        stored.level,
     });
 
     if (options.hp) try writer.print("HP: {}/{}\n", .{
-        p.hp,
-        p.stats.hp,
+        stored.hp,
+        stored.stats.hp,
     });
 
     if (options.stats) try writer.print("Stats  - Atk: {: >3}, Def: {: >3}, Spc: {: >3}, Spe: {: >3}\n", .{
-        p.stats.atk,
-        p.stats.def,
-        p.stats.spc,
-        p.stats.spe,
+        stored.stats.atk,
+        stored.stats.def,
+        stored.stats.spc,
+        stored.stats.spe,
     });
 
     // TODO Modified stats from active
 
     if (options.boosts) try writer.print("Boosts - Atk: {: >3}, Def: {: >3}, Spc: {: >3}, Spe: {: >3}, Accuracy: {}, Evasion: {}\n", .{
-        active_p.boosts.atk,
-        active_p.boosts.def,
-        active_p.boosts.spc,
-        active_p.boosts.spe,
-        active_p.boosts.accuracy,
-        active_p.boosts.evasion,
+        active.boosts.atk,
+        active.boosts.def,
+        active.boosts.spc,
+        active.boosts.spe,
+        active.boosts.accuracy,
+        active.boosts.evasion,
     });
 
     if (options.status) try writer.print("Status - {s}\n", .{
-        pkmn.gen1.Status.name(p.status),
+        pkmn.gen1.Status.name(stored.status),
     });
 
     // TODO Volatiles
 
     if (options.typing) {
-        if (p.types.type1 == p.types.type2) {
+        if (stored.types.type1 == stored.types.type2) {
             // Single Typing
             try writer.print("Typing - {s}\n", .{
-                @tagName(p.types.type1),
+                @tagName(stored.types.type1),
             });
         } else {
             // Double Typing
             try writer.print("Typing - {s} {s}\n", .{
-                @tagName(p.types.type1),
-                @tagName(p.types.type2),
+                @tagName(stored.types.type1),
+                @tagName(stored.types.type2),
             });
         }
     }
 
     if (options.moves) {
-        for (p.moves) |move| {
-            const move_data = pkmn.gen1.Move.get(move.id);
-            try writer.print("{s: <12} - {: >3}% - {s: <17} - {: >5}bp\n", .{
-                @tagName(move.id),
-                move_data.accuracy,
-                @tagName(move_data.effect),
-                move_data.bp,
-            });
+        for (active.moves, 1..) |_, i| {
+            try move_details(active, .{ .type = .Move, .data = @intCast(i) }, writer);
         }
     }
+}
 
-    try writer.print("\n", .{});
+pub fn move_details(pokemon: pkmn.gen1.ActivePokemon, choice: pkmn.Choice, writer: anytype) !void {
+    assert(choice.type == .Move);
+    const move_slot = pokemon.move(choice.data);
+    const move_data = pkmn.gen1.Move.get(move_slot.id);
+    try writer.print("{s: <12} - {: >3}% - {s: <17} - {: >5}bp\n", .{
+        @tagName(move_slot.id),
+        move_data.accuracy,
+        @tagName(move_data.effect),
+        move_data.bp,
+    });
 }
 
 pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Battle(pkmn.gen1.PRNG) {

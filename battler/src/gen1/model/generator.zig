@@ -1,21 +1,14 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const print = std.debug.print;
 
 const pkmn = @import("pkmn");
 const builder = @import("tree");
 const tools = builder.tools;
 
-fn generate_battles(sample_size: u16, alloc: std.mem.Allocator) !void {
-    // High Entropy randomness from program timestamp
-    const curr_time = @as(u64, @bitCast(std.time.milliTimestamp()));
-    var rng = pkmn.PSRNG.init(curr_time);
+fn generate_battles(data_file: std.fs.File, seed: u64, sample_size: u16, alloc: std.mem.Allocator) !void {
+    var rng = pkmn.PSRNG.init(seed);
 
-    // Fetch file and setup close
-    const cwd = std.fs.cwd();
-    const data_fn = try std.fmt.allocPrint(alloc, "training_data/{}.txt", .{curr_time});
-    var data_file: std.fs.File = try cwd.createFile(data_fn, .{});
-    defer alloc.free(data_fn);
+    // Fetch file and setup close;
     defer data_file.close();
 
     // Generator wrtiers from file descriptors
@@ -51,10 +44,7 @@ fn generate_battles(sample_size: u16, alloc: std.mem.Allocator) !void {
     var empty_box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer empty_box.deinit();
 
-    builder.exhaustive_decision_tree(init_node, &empty_box, 1, 1, alloc) catch |err| {
-        try cwd.deleteFile(data_fn);
-        return err;
-    };
+    try builder.exhaustive_decision_tree(init_node, &empty_box, 1, 1, alloc);
 
     var i: u16 = 0;
     const total_transitions: usize = init_node.transitions.items.len;
@@ -65,8 +55,20 @@ fn generate_battles(sample_size: u16, alloc: std.mem.Allocator) !void {
         const transition = init_node.transitions.items[index];
         const chosen_battle = transition.next_node.battle;
 
-        try tools.battle_details(init_battle, tools.DetailOptions.all(), stdout);
-        try tools.battle_details(chosen_battle, tools.DetailOptions.all(), stdout);
+        try tools.side_details(init_battle.side(.P1), tools.DetailOptions.no_moves(), stdout);
+        try tools.move_details(init_battle.side(.P1).active, transition.choices[0], stdout);
+        try stdout.writeAll("\n");
+
+        try tools.side_details(init_battle.side(.P2), tools.DetailOptions.no_moves(), stdout);
+        try tools.move_details(init_battle.side(.P2).active, transition.choices[1], stdout);
+        try stdout.writeAll("\n\n");
+
+        try stdout.print("{}\n", .{transition.actions});
+        try stdout.writeAll("\n");
+
+        try tools.battle_details(chosen_battle, tools.DetailOptions.no_moves(), stdout);
+        try stdout.writeAll("\n\n");
+
         try stdout.writeAll("Score: ");
 
         var input_buf: [4]u8 = undefined;
@@ -90,12 +92,7 @@ fn generate_battles(sample_size: u16, alloc: std.mem.Allocator) !void {
     try stdout.print("Total Updates: {}\n", .{total_transitions});
 }
 
-fn parse_training_data(alloc: std.mem.Allocator) !void {
-    const dir = try std.fs.cwd().openDir(
-        "training_data/",
-        .{ .iterate = true },
-    );
-
+fn parse_training_data(dir: std.fs.Dir, alloc: std.mem.Allocator) !void {
     var walker = try dir.walk(alloc);
     defer walker.deinit();
 
@@ -139,8 +136,20 @@ pub fn main() !void {
     const args = std.os.argv;
     assert(args.len == 2);
 
-    print("{s}\n", .{args[1]});
     const input = args[1];
     const sample_size = try std.fmt.parseInt(u16, std.mem.span(input), 10);
-    try generate_battles(sample_size, alloc);
+
+    // High Entropy randomness from program timestamp
+    const curr_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+
+    // Create a file with the name being the RNG seed
+    const training_data = try std.fs.cwd().openDir("training_data/", .{});
+    const data_fn = try std.fmt.allocPrint(alloc, "{}.txt", .{curr_time});
+    const data_file: std.fs.File = try training_data.createFile(data_fn, .{});
+
+    try generate_battles(data_file, curr_time, sample_size, alloc);
+
+    // If program doesn't error or get interrupted, copy to a safe directory
+    const good_dir = try training_data.openDir("good_data/", .{});
+    try std.fs.Dir.copyFile(training_data, data_fn, good_dir, data_fn, .{});
 }
