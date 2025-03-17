@@ -1,9 +1,10 @@
 .{
-    .name = "optimal-pkmn-battler",
+    .name = .optimal_pkmn_battler,
+    .fingerprint = 0xccc6edad0a7ecca,
     .version = "0.0.1",
-    .minimum_zig_version = "0.12.0",
+    .minimum_zig_version = "0.14.0",
     .paths = .{"."},
     .dependencies = .{
-        .pkmn = .{ .path = "./engine" },
+        .pkmn = .{ .url = "https://github.com/pkmn/engine/archive/nightly.tar.gz", .hash = "N-V-__8AAJlOLgD44gm9VBxH6Jy4bOb0fFqS-v_GDKd5HsW8"},
     },
 }

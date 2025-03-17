@@ -21,6 +21,10 @@ var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
 
 pub const pkmn_options = pkmn.Options{ .internal = true };
 
+export fn check() usize {
+    return @as(usize, 12);
+}
+
 export fn init() void {
     import_alloc = import_arena.allocator();
     box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.wasm_allocator);
@@ -210,4 +214,8 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
             enemy_imports.append(parsed.value) catch return void{};
         }
     }
+}
+
+fn main() void {
+    print("Main\n", .{});
 }

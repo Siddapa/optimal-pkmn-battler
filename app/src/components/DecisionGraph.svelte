@@ -3,7 +3,7 @@
     import { DataSet, Network } from "vis-network/standalone";
     import { wasmExports } from '../stores.js';
 
-    let zigRoot;
+    let treeRoot;
 
     let network;
     var nodes = new DataSet([]);
@@ -49,44 +49,44 @@
         nodes.clear();
         edges.clear();
         network.redraw();
-        zigRoot = $wasmExports.generateOptimizedDecisionTree(0);
+        treeRoot = $wasmExports.generateOptimizedDecisionTree(0);
 
-        populateDecisionGraph(zigRoot, 0);
+        populateDecisionGraph(treeRoot, 0);
         
         network.redraw();
     }
 
-    const populateDecisionGraph = (zigNode, depth) => {
+    const populateDecisionGraph = (treeNode, depth) => {
         const currNodeID = graphID;
 
         var bkgdColor = "#00FF00";
 
-        if ($wasmExports.getResult(zigNode) != 1) {
+        if ($wasmExports.getResult(treeNode) != 1) {
             bkgdColor = "#0000FF"
-        } else if ($wasmExports.getHP(zigNode, true) == 0 || $wasmExports.getHP(zigNode, false) == 0) {
+        } else if ($wasmExports.getHP(treeNode, true) == 0 || $wasmExports.getHP(treeNode, false) == 0) {
             bkgdColor = "#FF0000"
         }
         
         nodes.add([{
             id: currNodeID, 
             level: depth, 
-            label: graphNodeLabel(zigNode, depth), 
+            label: graphNodeLabel(treeNode, depth), 
             color: {
                 background: bkgdColor
             },
-            zigNode: zigNode
+            treeNode: treeNode
         }]);
         graphID += 1;
 
-        const numOfNextTurns = $wasmExports.getNumOfNextTurns(zigNode);
+        const numOfNextTurns = $wasmExports.getNumOfNextTurns(treeNode);
         for (let i = 0; i < numOfNextTurns; i++) {
-            const nextNode = $wasmExports.getNextNode(zigNode, i);
+            const nextNode = $wasmExports.getNextNode(treeNode, i);
             if (nextNode != 0) { // 0 pointers are null decision nodes
                 const childNodeID = populateDecisionGraph(nextNode, depth + 1);
                 edges.add([{
                     from: currNodeID, 
                     to: childNodeID, 
-                    label: graphEdgeLabel(zigNode, i),
+                    label: graphEdgeLabel(treeNode, i),
                     font: {
                         face: "Arial", 
                         color: "blue", 
@@ -101,18 +101,18 @@
         return currNodeID;
     }
 
-    function graphEdgeLabel(zigNode, index) {
-        return fetchString($wasmExports.getTransitionChoice(zigNode, index, true, 0)) + "\n" + fetchString($wasmExports.getTransitionChoice(zigNode, index, false, 0));
+    function graphEdgeLabel(treeNode, index) {
+        return fetchString($wasmExports.getTransitionChoice(treeNode, index, true, 0)) + "\n" + fetchString($wasmExports.getTransitionChoice(treeNode, index, false, 0));
     }
 
-    function graphNodeLabel(zigNode, depth) {
-        return fetchString($wasmExports.getSpecies(zigNode, true, 0)) + " (" + String($wasmExports.getHP(zigNode, true)) + ")" +
+    function graphNodeLabel(treeNode, depth) {
+        return fetchString($wasmExports.getSpecies(treeNode, true, 0)) + " (" + String($wasmExports.getHP(treeNode, true)) + ")" +
                '\nvs\n' + 
-               fetchString($wasmExports.getSpecies(zigNode, false, 0)) + " (" + String($wasmExports.getHP(zigNode, false)) + ")" + 
+               fetchString($wasmExports.getSpecies(treeNode, false, 0)) + " (" + String($wasmExports.getHP(treeNode, false)) + ")" + 
                '\n' + 
-               fetchArray($wasmExports.getTeam(zigNode, 0)) + 
+               fetchArray($wasmExports.getTeam(treeNode, 0)) + 
                '\n' + 
-               $wasmExports.getScore(zigNode);
+               $wasmExports.getScore(treeNode);
     }
 
     onMount(() => {
@@ -122,7 +122,7 @@
 
 <div>
     <h3>Decision Tree</h3>
-    <input type="button" value="Generate Tree" onclick={updateGraph}/>
+    <input type="button" value="Generate Tree" on:click={updateGraph}/>
     <br>
     <br>
     <div id="decisionGraph"></div>

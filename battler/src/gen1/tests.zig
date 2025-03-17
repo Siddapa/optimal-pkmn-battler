@@ -7,7 +7,7 @@ const pkmn = @import("pkmn");
 const builder = @import("tree");
 const enemy_ai = builder.enemy_ai;
 
-var writer = std.io.getStdErr().writer();
+var stderr = std.io.getStdErr().writer();
 
 var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
 var options = pkmn.battle.options(
@@ -17,25 +17,23 @@ var options = pkmn.battle.options(
 );
 
 test "BaseTransitions" {
-    try writer.print("Transitions\n", .{});
+    try stderr.print("Transitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
         .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
     }, &.{
-        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .HyperBeam, .Blizzard, .Peck } },
+        .{ .species = .Jynx, .moves = &.{ .IceBeam, .HyperBeam, .Blizzard, .Peck } },
         .{ .species = .Rhyhorn, .moves = &.{ .Thunderbolt, .Mist, .WaterGun, .Psybeam } },
     });
 
     const result = battle.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch pkmn.Result{};
 
-    const total_updates = try run_transitions(battle, result);
-
-    try writer.print("# of Updates: {}\n", .{total_updates});
+    try run_transitions(battle, result);
 }
 
 test "EnemySwitchTransitions" {
-    try writer.print("EnemySwitchTransitions\n", .{});
+    try stderr.print("EnemySwitchTransitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
@@ -59,15 +57,13 @@ test "EnemySwitchTransitions" {
     // Moves are harcoded so changing initial conditions could break test
     result = try battle.update(player_valid_choices[1], enemy_valid_choices[0], &options);
 
-    try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), writer);
+    try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stderr);
 
-    const total_updates = try run_transitions(battle, result);
-
-    try writer.print("# of Updates: {}\n", .{total_updates});
+    try run_transitions(battle, result);
 }
 
 test "BoxSwitchTransitions" {
-    try writer.print("BoxSwitchTransitions\n", .{});
+    try stderr.print("BoxSwitchTransitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
@@ -81,13 +77,11 @@ test "BoxSwitchTransitions" {
     const switch_mon = pkmn.gen1.helpers.Pokemon.init(.{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } });
     _ = builder.add_to_team(&battle, switch_mon, 2);
 
-    const total_updates = try run_transitions(battle, result);
-
-    try writer.print("# of Updates: {}\n", .{total_updates});
+    try run_transitions(battle, result);
 }
 
 test "OptimalWASM" {
-    try writer.print("OptimalWASM\n", .{});
+    try stderr.print("OptimalWASM\n", .{});
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
     }, &.{
@@ -105,7 +99,7 @@ test "OptimalWASM" {
 }
 
 test "Exhaust1" {
-    try writer.print("Exhaust1\n", .{});
+    try stderr.print("Exhaust1\n", .{});
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -129,7 +123,7 @@ test "Exhaust1" {
 }
 
 test "Optimal1" {
-    try writer.print("Optimal1\n", .{});
+    try stderr.print("Optimal1\n", .{});
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -152,7 +146,7 @@ test "Optimal1" {
 }
 
 test "Random" {
-    try writer.print("Random\n", .{});
+    try stderr.print("Random\n", .{});
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
     }, &.{
@@ -177,16 +171,16 @@ test "Random" {
         const n2 = random.uintLessThan(u8, max2);
         c2 = enemy_choices[n2];
 
-        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), writer);
+        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stderr);
         // TODO Also display transition
-        try writer.print("\n\n", .{});
+        try stderr.print("\n\n", .{});
 
         result = battle.update(c1, c2, &options) catch pkmn.Result{};
     }
-    try writer.print("{}\n", .{result.type});
+    try stderr.print("{}\n", .{result.type});
 }
 
-fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !usize {
+fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !void {
     var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
 
@@ -199,10 +193,6 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     var total_updates: usize = 0;
     for (player_valid_choices) |player_choice| {
         for (enemy_valid_choices) |enemy_choice| {
-            try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), writer);
-            // TODO Also display transition
-            try writer.print("\n", .{});
-
             const updates: []builder.Update = try builder.transitions(
                 battle,
                 player_choice,
@@ -214,19 +204,28 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
             total_updates += updates.len;
 
             for (updates) |update| {
-                try writer.print("Actions: {}\n", .{update.actions});
-                try writer.print("P1: {} {}\n", .{ update.actions.p1.hit, update.actions.p1.critical_hit });
-                try writer.print("P2: {} {}\n", .{ update.actions.p2.hit, update.actions.p2.critical_hit });
+                try stderr.print("Actions: {}\n", .{update.actions});
+                try stderr.writeAll("\n");
 
-                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions.all(), writer);
+                try builder.tools.side_details(battle.side(.P1), builder.tools.DetailOptions.no_moves(), stderr);
+                if (player_choice.type == .Move) try builder.tools.move_details(battle.side(.P1).active, player_choice, stderr);
+                try stderr.writeAll("\n");
 
-                try writer.print("\n", .{});
+                try builder.tools.side_details(battle.side(.P2), builder.tools.DetailOptions.no_moves(), stderr);
+                if (enemy_choice.type == .Move) try builder.tools.move_details(battle.side(.P2).active, enemy_choice, stderr);
+                try stderr.writeAll("\n");
+
+                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions.no_moves(), stderr);
+
+                try stderr.writeAll("\n\n\n\n");
             }
-            try writer.print("\n", .{});
+            try stderr.print("\n", .{});
         }
     }
 
-    return total_updates;
+    try stderr.print("# of Updates: {}\n", .{total_updates});
+    try stderr.print("Player Choices: {}\n", .{player_valid_choices.len});
+    try stderr.print("Enemy Choices: {}\n", .{enemy_valid_choices.len});
 }
 
 fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
@@ -266,7 +265,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, &box, alloc);
 
     const num_of_nodes = builder.count_nodes(root);
-    try writer.print("Num Of Nodes: {}\n", .{num_of_nodes});
+    try stderr.print("Num Of Nodes: {}\n", .{num_of_nodes});
 
     builder.free_tree(root, alloc);
 }

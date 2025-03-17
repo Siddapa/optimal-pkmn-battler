@@ -261,14 +261,18 @@ pub fn exhaustive_decision_tree(
     }
 }
 
-pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2: pkmn.Choice, durations: pkmn.gen1.chance.Durations, alloc: std.mem.Allocator) ![]Update {
+pub fn transitions(
+    battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
+    c1: pkmn.Choice,
+    c2: pkmn.Choice,
+    durations: pkmn.gen1.chance.Durations,
+    alloc: std.mem.Allocator,
+) ![]Update {
     const Rolls = pkmn.gen1.calc.Rolls;
 
     var updates = std.ArrayList(Update).init(alloc);
-    var seen = std.AutoHashMap(pkmn.gen1.chance.Actions, void).init(alloc);
     var frontier = std.ArrayList(pkmn.gen1.chance.Actions).init(alloc);
     errdefer updates.deinit();
-    defer seen.deinit();
     defer frontier.deinit();
 
     var opts = pkmn.battle.options(
@@ -284,6 +288,12 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
     const p2 = b.side(.P2);
 
     try frontier.append(opts.chance.actions);
+
+    var p: pkmn.Rational(u256) = .{ .p = 0, .q = 1 };
+
+    // Hash actions to remove duplicates
+    var actions_map = std.AutoHashMap(pkmn.gen1.chance.Actions, u1).init(alloc);
+    defer actions_map.deinit();
 
     // zig fmt: off
     for (Rolls.metronome(frontier.items[0].p1)) |p1_move| {
@@ -308,8 +318,8 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
         for (Rolls.disable(f.p2, durations.p2, p2_slp)) |p2_dis| { a.p2.disable = p2_dis;
         for (Rolls.attacking(f.p1, durations.p1, p1_slp)) |p1_atk| { a.p1.attacking = p1_atk;
         for (Rolls.attacking(f.p2, durations.p2, p2_slp)) |p2_atk| { a.p2.attacking = p2_atk;
-        for (Rolls.confusion(f.p1, durations.p1, p1_atk, p1_slp)) |p1_cfz| { a.p1.confusion = p1_cfz;
-        for (Rolls.confusion(f.p2, durations.p2, p2_atk, p2_slp)) |p2_cfz| { a.p2.confusion = p2_cfz;
+        for (Rolls.confusion(f.p1, durations.p1, tie, p1_atk, p1_slp)) |p1_cfz| { a.p1.confusion = p1_cfz;
+        for (Rolls.confusion(f.p2, durations.p2, tie, p2_atk, p2_slp)) |p2_cfz| { a.p2.confusion = p2_cfz;
         for (Rolls.confused(f.p1, p1_cfz)) |p1_cfzd| { a.p1.confused = p1_cfzd;
         for (Rolls.confused(f.p2, p2_cfz)) |p2_cfzd| { a.p2.confused = p2_cfzd;
         for (Rolls.paralyzed(f.p1, p1_cfzd)) |p1_par| { a.p1.paralyzed = p1_par;
@@ -329,11 +339,17 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
         for (Rolls.criticalHit(f.p1, p1_hit)) |p1_crit| { a.p1.critical_hit = p1_crit;
         for (Rolls.criticalHit(f.p2, p2_hit)) |p2_crit| { a.p2.critical_hit = p2_crit;
 
-        // if ((p1_hit == .false and p1_crit != .false) or (p2_hit == .false and p2_crit != .false)) continue;
+        // if ((p1_hit == .false and p1_crit != .false)) continue;
 
         var player_mask: u16 = 0b1000000000000000;
         var enemy_mask: u16 = 0b1000000000000000;
         var p1_dmg = Rolls.damage(f.p1, p1_hit);
+
+        // print("P1 Hit: {s}\n", .{@tagName(p1_hit)});
+        // print("P1 Min: {}, P1 Max: {}\n", .{p1_dmg.min, p1_dmg.max});
+        // print("P1 Crit: {s}\n", .{@tagName(p1_crit)});
+
+        if (p1_hit == .true and p1_dmg.min == 0) continue;
 
         while (p1_dmg.min < p1_dmg.max) : ({p1_dmg.min += 1; player_mask >>= 1;}) {
             if ((ROLL_INTERVALS & player_mask) == 0) continue;
@@ -342,6 +358,12 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
             
             var p2_dmg = Rolls.damage(f.p2, p2_hit);
             const p2_min: u9 = p2_dmg.min;
+
+            // print("P2 Hit: {s}\n", .{@tagName(p2_hit)});
+            // print("P2 Min: {}, P2 Max: {}\n", .{p2_dmg.min, p2_dmg.max});
+            // print("P2 Crit: {s}\n", .{@tagName(p2_crit)});
+
+            if (p2_hit == .true and p2_dmg.min == 0) continue;
 
             while (p2_dmg.min < p2_dmg.max) : ({p2_dmg.min += 1; enemy_mask >>= 1;}) {
                 if ((ROLL_INTERVALS & enemy_mask) == 0) continue;
@@ -355,12 +377,21 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
 
                 b = battle;
                 const result = try b.update(c1, c2, &opts);
-                try updates.append(.{
-                    .battle = b,
-                    .actions = a,
-                    .durations = opts.chance.durations,
-                    .result = result,
-                });
+                if (try actions_map.fetchPut(a, 1)) |old| {
+                    _ = old;
+                } else {
+                    try updates.append(.{
+                        .battle = b,
+                        .actions = a,
+                        .durations = opts.chance.durations,
+                        .result = result,
+                    });
+                }
+
+                
+
+                try p.add(&opts.chance.probability);
+                print("Prob: {}\n", .{opts.chance.probability});
 
                 const p1_max: u9 = if (p2_dmg.min != p2_min)
                     p1_dmg.min
@@ -391,6 +422,9 @@ pub fn transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), c1: pkmn.Choice, c2
     frontier.shrinkRetainingCapacity(1);
 
     }}
+    
+    p.reduce();
+    print("Summed Probability: {}\n", .{p});
 
     return updates.toOwnedSlice();
 }

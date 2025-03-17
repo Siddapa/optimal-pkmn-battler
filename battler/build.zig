@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
     const wasm = b.addExecutable(.{
         .name = generation,
         .root_source_file = b.path(wasm_source),
-        .optimize = .ReleaseFast,
+        .optimize = .Debug,
         .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi }),
     });
     wasm.rdynamic = true;
@@ -52,7 +52,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     // Modules
-    const pkmn = b.dependency("pkmn", .{ .showdown = false, .log = false, .chance = true, .calc = true });
+    const pkmn = b.dependency("pkmn", .{ .showdown = true, .log = false, .chance = true, .calc = true });
     wasm.root_module.addImport("pkmn", pkmn.module("pkmn"));
     train.root_module.addImport("pkmn", pkmn.module("pkmn"));
     generate.root_module.addImport("pkmn", pkmn.module("pkmn"));

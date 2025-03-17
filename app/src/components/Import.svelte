@@ -144,7 +144,8 @@ Goldeen
                 "spc": base_exp,
                 "spe": base_exp
             },
-            "moves": ["", "", "", ""]
+            "moves": ["", "", "", ""],
+            "bkg-color": 'none',
         };
         var moveID = 0;
         for (let i = 0; i < numOfLines; i++) {

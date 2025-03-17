@@ -1,14 +1,23 @@
 <div>
-    <h3>Enemy Box</h3>
+    <h3>Box</h3>
     <div class="box-container">
-        {#each $enemyBox as pokemon}
-            <img class="box-mon" src="sprites/gen1/{pokemon['species'].toLowerCase()}.PNG">
+        {#each $mons as pokemon, i}
+            <img 
+                class="box-mon"
+                id = {type + "-" + i}
+                src="sprites/gen1/{pokemon['species'].toLowerCase()}.PNG"
+                onclick={() => selection(type, i)}
+            >
         {/each}
     </div>
 </div>
 
 <script>
-    import { enemyBox } from '../stores.js';
+    let {mons, type} = $props();
+
+    function selection(type, i) {
+        alert(index);
+    }
 </script>
 
 <style>
@@ -29,5 +38,6 @@
 
     .box-mon {
         mix-blend-mode: multiply;
+        background-color: red;
     }
 </style>
