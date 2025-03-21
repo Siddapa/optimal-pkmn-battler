@@ -10,12 +10,15 @@
     var edges = new DataSet([]);
     let graphID = 0;
 
-    function fetchString(strLength) {
-        const outputView = new Uint8Array($wasmExports.memory.buffer, 0, strLength);
-        return new TextDecoder().decode(outputView);
+    async function fetchString(strLength) {
+        $wasmExports.memory().then((memory) => {
+            const outputView = new Uint8Array(memory.buffer, 0, strLength);
+            return new TextDecoder().decode(outputView);
+        });
+        
     }
 
-    function fetchArray(arrLength) {
+    async function fetchArray(arrLength) {
         return new Int8Array($wasmExports.memory.buffer, 0, arrLength);
     }
 
@@ -45,25 +48,47 @@
         network = new Network(container, data, options);
     }
 
-    const updateGraph = () => {
+    const updateGraph = async () => {
         nodes.clear();
         edges.clear();
         network.redraw();
-        treeRoot = $wasmExports.generateOptimizedDecisionTree(0);
 
-        populateDecisionGraph(treeRoot, 0);
-        
-        network.redraw();
+        // console.log($wasmExports);
+        // console.log(typeof $wasmExports.memory);
+        // $wasmExports.memory().then((result) => console.log(result.buffer));
+        // console.log(await $wasmExports.test_int());
+        // console.log(fetchString(await $wasmExports.test_string(0)));
+
+        // $wasmExports.generateOptimizedDecisionTree(0).then((result) => {
+        //     console.log(result);
+
+        //     treeRoot = result;
+        //     populateDecisionGraph(treeRoot, 0);
+        // 
+        //     network.redraw();
+        // });
     }
 
-    const populateDecisionGraph = (treeNode, depth) => {
+    const populateDecisionGraph = async (treeNode, depth) => {
         const currNodeID = graphID;
 
         var bkgdColor = "#00FF00";
 
-        if ($wasmExports.getResult(treeNode) != 1) {
+        // $wasmExports.getResult(treeNode).then((result) => {
+        //     $wasmExports.getHP(treeNode, true).then((playerHP) => {
+        //         $wasmExports.getHP(treeNode, false).then((enemyHP) => {
+        //             if (result != 1) {
+        //                 bkgdColor = "#0000FF";
+        //             } else if (playerHP == 0 || enemyHP == 0) {
+        //                 bkgdColor = "#FF0000";
+        //             }
+        //         });
+        //     });
+        // });
+
+        if (await $wasmExports.getResult(treeNode) != 1) {
             bkgdColor = "#0000FF"
-        } else if ($wasmExports.getHP(treeNode, true) == 0 || $wasmExports.getHP(treeNode, false) == 0) {
+        } else if (await $wasmExports.getHP(treeNode, true) == 0 || await $wasmExports.getHP(treeNode, false) == 0) {
             bkgdColor = "#FF0000"
         }
         
@@ -78,11 +103,33 @@
         }]);
         graphID += 1;
 
-        const numOfNextTurns = $wasmExports.getNumOfNextTurns(treeNode);
+        // $wasmExports.getNumOfNextTurns(treeNode).then((numOfNextTurns) => {
+        //     for (let i = 0; i < numOfNextTurns; i++) {
+        //         $wasmExports.getNextNode(treeNode, i).then((nextNode) => {
+        //             if (nextNode != 0) { // 0 pointers are null decision nodes
+        //                 const childNodeID = populateDecisionGraph(nextNode, depth + 1);
+        //                 edges.add([{
+        //                     from: currNodeID, 
+        //                     to: childNodeID, 
+        //                     label: graphEdgeLabel(treeNode, i),
+        //                     font: {
+        //                         face: "Arial", 
+        //                         color: "blue", 
+        //                         size: 15
+        //                     },
+        //                     shadow: false,
+        //                     arrows: "to"
+        //                 }])
+        //             }
+        //         });
+        //     }
+        // });
+
+        const numOfNextTurns = await $wasmExports.getNumOfNextTurns(treeNode);
         for (let i = 0; i < numOfNextTurns; i++) {
-            const nextNode = $wasmExports.getNextNode(treeNode, i);
+            const nextNode = await $wasmExports.getNextNode(treeNode, i);
             if (nextNode != 0) { // 0 pointers are null decision nodes
-                const childNodeID = populateDecisionGraph(nextNode, depth + 1);
+                const childNodeID = await populateDecisionGraph(nextNode, depth + 1);
                 edges.add([{
                     from: currNodeID, 
                     to: childNodeID, 
@@ -101,18 +148,18 @@
         return currNodeID;
     }
 
-    function graphEdgeLabel(treeNode, index) {
-        return fetchString($wasmExports.getTransitionChoice(treeNode, index, true, 0)) + "\n" + fetchString($wasmExports.getTransitionChoice(treeNode, index, false, 0));
+    async function graphEdgeLabel(treeNode, index) {
+        return fetchString(await $wasmExports.getTransitionChoice(treeNode, index, true, 0)) + "\n" + fetchString(await $wasmExports.getTransitionChoice(treeNode, index, false, 0));
     }
 
-    function graphNodeLabel(treeNode, depth) {
-        return fetchString($wasmExports.getSpecies(treeNode, true, 0)) + " (" + String($wasmExports.getHP(treeNode, true)) + ")" +
+    async function graphNodeLabel(treeNode, depth) {
+        return fetchString(await $wasmExports.getSpecies(treeNode, true, 0)) + " (" + String(await $wasmExports.getHP(treeNode, true)) + ")" +
                '\nvs\n' + 
-               fetchString($wasmExports.getSpecies(treeNode, false, 0)) + " (" + String($wasmExports.getHP(treeNode, false)) + ")" + 
+               fetchString(await $wasmExports.getSpecies(treeNode, false, 0)) + " (" + String(await $wasmExports.getHP(treeNode, false)) + ")" + 
                '\n' + 
-               fetchArray($wasmExports.getTeam(treeNode, 0)) + 
+               fetchArray(await $wasmExports.getTeam(treeNode, 0)) + 
                '\n' + 
-               $wasmExports.getScore(treeNode);
+               await $wasmExports.getScore(treeNode);
     }
 
     onMount(() => {

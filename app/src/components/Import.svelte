@@ -75,7 +75,7 @@ Goldeen
     let invalidEnemyImports = $state([]);
 
     const submitImport = async () => {
-        $wasmExports.clear();
+        await $wasmExports.clear();
         if (playerImport.value != "") {
             if (playerFormat.value == "Normal") {
                 $playerBox = [];
@@ -109,18 +109,14 @@ Goldeen
                 // TODO
             }
         }
+
         
         for (const pokemon of $playerBox) {
-            const memoryView = new Uint8Array($wasmExports.memory.buffer);
-            const { written } = new TextEncoder().encodeInto(JSON.stringify(pokemon), memoryView);
-            await $wasmExports.importPokemon(0, written, 1);
+            await $wasmExports.importPokemon(pokemon, true);
         }
         for (const pokemon of $enemyBox) {
-            const memoryView = new Uint8Array($wasmExports.memory.buffer);
-            const { written } = new TextEncoder().encodeInto(JSON.stringify(pokemon), memoryView);
-            await $wasmExports.importPokemon(0, written, 0);
+            await $wasmExports.importPokemon(pokemon, false);
         }
-        
     }
 
     function normalToJson(importTeam) {

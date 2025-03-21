@@ -2,17 +2,22 @@ const std = @import("std");
 const print = std.debug.print;
 const assert = std.debug.assert;
 const pkmn = @import("pkmn");
+
 pub const tools = @import("tools.zig");
 pub const enemy_ai = @import("enemy_ai.zig");
+pub const scorer = @import("scorer.zig");
 
 // Maximum number of levels to build tree to
 const MAX_TURNLEVEL: u16 = 50;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 1;
+const LOOKAHEAD: u4 = 2;
 
 // Maximum number of nodes to optimize for at a given level
 const K_LARGEST: u16 = 1;
+
+// Minimum node score required for further extension
+const MIN_SCORE: f16 = 150;
 
 // Binary mask for which of the 16 rolls to generate (always keep min/max roll)
 const ROLL_INTERVALS: u16 = 0b1000000000000000;
@@ -23,21 +28,12 @@ comptime {
     assert(ROLL_INTERVALS != 0);
 }
 
-/// Globalized creation of options for battle updates
-var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
-var calc = pkmn.gen1.Calc{};
-const options = pkmn.battle.options(
-    pkmn.protocol.NULL,
-    &chance,
-    &calc,
-);
-
 /// Structs for buliding decision tree
 pub const DecisionNode = struct {
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     team: [6]i8 = [_]i8{0} ** 6,
     result: pkmn.Result,
-    score: u16 = 0,
+    score: f16 = 0,
     previous_node: ?*DecisionNode = null,
     transitions: std.ArrayList(Transition) = undefined,
 };
@@ -81,7 +77,7 @@ pub fn optimal_decision_tree(
 
     var level: u16 = 1;
     while (level < MAX_TURNLEVEL) {
-        print("Level: {}\n", .{level});
+        print("Level: {d}\n", .{level});
         // Must be list of Transition to be compatible with compare function for sorting by score
         var scored_nodes = std.ArrayList(*DecisionNode).init(alloc);
         defer scored_nodes.deinit();
@@ -89,12 +85,12 @@ pub fn optimal_decision_tree(
         // Extend leaves of scoring_nodes to maximize level for scoring
         for (scoring_nodes.items) |scoring_node| {
             if (scoring_node.result.type == .None) {
-                try exhaustive_decision_tree(scoring_node, box, 1, LOOKAHEAD, alloc);
+                try exhaustive_decision_tree(scoring_node, box, 0, alloc);
 
-                if (scoring_node.previous_node) |previous_node| {
-                    const tc, _ = try get_parent_transition(previous_node, scoring_node);
-                    scoring_node.score = score(scoring_node, tc);
-                }
+                // if (scoring_node.previous_node) |previous_node| {
+                //     const tc, _ = try get_parent_transition(previous_node, scoring_node);
+                //     scoring_node.score = score(scoring_node, tc);
+                // }
             }
 
             try scored_nodes.append(scoring_node);
@@ -139,18 +135,15 @@ pub fn exhaustive_decision_tree(
     curr_node: *DecisionNode,
     box: *std.ArrayList(pkmn.gen1.Pokemon),
     level: u16,
-    lookahead: u4,
     alloc: std.mem.Allocator,
 ) !void {
-    if (level < lookahead + 1) {
+    if (level < LOOKAHEAD and curr_node.score > MIN_SCORE) {
         if (curr_node.transitions.items.len == 0) {
             // Select durations from transition of curr_node's parent to itself
-            var durations: pkmn.gen1.chance.Durations = undefined;
+            var durations = pkmn.gen1.chance.Durations{};
             if (curr_node.previous_node) |parent| {
                 const tc, _ = try get_parent_transition(parent, curr_node);
                 durations = tc.durations;
-            } else {
-                durations = options.chance.durations;
             }
 
             var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
@@ -176,6 +169,7 @@ pub fn exhaustive_decision_tree(
                             .previous_node = curr_node,
                             .transitions = std.ArrayList(Transition).init(alloc),
                         };
+                        child_node.score = scorer.score_node(child_node);
                         try curr_node.transitions.append(.{
                             .choices = .{ player_choice, enemy_choice },
                             .actions = new_update.actions,
@@ -187,7 +181,6 @@ pub fn exhaustive_decision_tree(
                             child_node,
                             box,
                             level + 1,
-                            lookahead,
                             alloc,
                         );
                     }
@@ -231,6 +224,7 @@ pub fn exhaustive_decision_tree(
                                         .previous_node = curr_node,
                                         .transitions = std.ArrayList(Transition).init(alloc),
                                     };
+                                    child_node.score = scorer.score_node(child_node);
                                     try curr_node.transitions.append(.{
                                         .choices = .{ switch_choice, enemy_choice },
                                         .actions = new_update.actions,
@@ -242,7 +236,6 @@ pub fn exhaustive_decision_tree(
                                         child_node,
                                         box,
                                         level + 1,
-                                        lookahead,
                                         alloc,
                                     );
                                 }
@@ -255,7 +248,7 @@ pub fn exhaustive_decision_tree(
             }
         } else {
             for (curr_node.transitions.items) |transition| {
-                try exhaustive_decision_tree(transition.next_node, box, level + 1, lookahead, alloc);
+                try exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
             }
         }
     }
@@ -391,7 +384,6 @@ pub fn transitions(
                 
 
                 try p.add(&opts.chance.probability);
-                print("Prob: {}\n", .{opts.chance.probability});
 
                 const p1_max: u9 = if (p2_dmg.min != p2_min)
                     p1_dmg.min
@@ -424,50 +416,8 @@ pub fn transitions(
     }}
     
     p.reduce();
-    print("Summed Probability: {}\n", .{p});
 
     return updates.toOwnedSlice();
-}
-
-fn score(scoring_node: *DecisionNode, turn_choice: Transition) u16 {
-    var sum: u16 = 0;
-
-    const previous_node = scoring_node.previous_node orelse return 0;
-
-    const previous_battle = previous_node.battle;
-    const previous_player_active = previous_battle.side(.P1).active;
-    const previous_player_stored = previous_battle.side(.P1).stored();
-    const previous_enemy_active = previous_battle.side(.P2).active;
-    // const previous_enemy_stored = previous_battle.side(.P2).stored();
-
-    const scoring_battle = scoring_node.battle;
-    // const scoring_player_active = scoring_battle.side(.P1).active;
-    // const scoring_enemy_active  = scoring_battle.side(.P2).active;
-    
-    const choices = turn_choice.choices;
-
-    if (choices[0].type == .Move) {
-        sum += @as(u16, turn_choice.actions.p1.damage);
-
-        // STAB
-        const move_type = pkmn.gen1.Move.get(previous_player_stored.move(choices[0].data).id).type;
-        if (move_type == previous_player_active.types.type1 or move_type == previous_player_active.types.type2) {
-            sum += 2;
-        }
-
-        // Fast Kill
-        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(.P2).stored().hp == 0) {
-            sum += 2;
-        }
-        // Fast MultiKill
-        if (previous_player_active.stats.spe > previous_enemy_active.stats.spe and scoring_battle.side(.P2).stored().hp == 0) {}
-    } else if (choices[0].type == .Switch) {
-        sum += 5;
-    } else if (choices[0].type == .Pass) {
-        sum += 0;
-    }
-
-    return sum;
 }
 
 fn compare_score(_: void, n1: *DecisionNode, n2: *DecisionNode) bool {

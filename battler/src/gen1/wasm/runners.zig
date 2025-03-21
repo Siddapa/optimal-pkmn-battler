@@ -5,7 +5,6 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var import_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 
-// const builder = @import("tree/builder.zig");
 const tree = @import("tree");
 const pkmn = @import("pkmn");
 const import = @import("import.zig");
@@ -21,8 +20,15 @@ var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
 
 pub const pkmn_options = pkmn.Options{ .internal = true };
 
-export fn check() usize {
-    return @as(usize, 12);
+export fn test_int() usize {
+    return @as(usize, 11239);
+}
+
+export fn test_string(out: [*]u8) usize {
+    const species_str = player_imports.items[0].species;
+    print("{s}\n", .{species_str});
+    @memcpy(out, species_str);
+    return species_str.len;
 }
 
 export fn init() void {
@@ -138,7 +144,7 @@ export fn getNumOfNextTurns(curr_node: *tree.DecisionNode) usize {
 }
 
 export fn getScore(curr_node: *tree.DecisionNode) u16 {
-    return curr_node.score;
+    return @as(u16, @intFromFloat(curr_node.score));
 }
 
 export fn getResult(curr_node: *tree.DecisionNode) i8 {
@@ -214,8 +220,4 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
             enemy_imports.append(parsed.value) catch return void{};
         }
     }
-}
-
-fn main() void {
-    print("Main\n", .{});
 }

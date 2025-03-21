@@ -2,9 +2,8 @@
     import { onMount } from "svelte";
 
     import { wasmExports, playerBox, enemyBox } from './stores.js';
+    import {WASIWorkerHost} from "@runno/wasi";
     import TreeWorker from './tree-worker?worker'
-    import * as binaryen from "binaryen";
-    import * as Asyncify from 'https://unpkg.com/asyncify-wasm?module';
 
     import Settings      from './components/Settings.svelte';
     import Import        from './components/Import.svelte';
@@ -14,40 +13,71 @@
 
     onMount(async () => {
         function wasmWorker(modulePath) {
-         
-            // Create an object to later interact with 
             const proxy = {};
          
-            // Keep track of the messages being sent
-            // so we can resolve them correctly
             let id = 0;
             let idPromises = {};
 
             return new Promise((resolve, reject) => {
                 const worker = new TreeWorker();
+                worker.postMessage({eventType: "INITIALIZE", eventData: modulePath});
 
                 worker.addEventListener('message', function(event) {
                     const { eventType, eventData, eventId } = event.data;
                     
                     if (eventType === "INITIALIZED") {
-                        const methods = event.data.eventData;
-                        methods.forEach((method) => {
-                            proxy[method] = function() {
-                                return new Promise((resolve, reject) => {
-                                    worker.postMessage({
-                                        eventType: "CALL",
-                                        eventData: {
-                                            method: method,
-                                            arguments: Array.from(arguments) // arguments is not an array
-                                        },
-                                        eventId: id
-                                    });
-                                    
-                                    idPromises[id] = { resolve, reject };
-                                    id++
+                        proxy['clear'] = function() {
+                            return new Promise((resolve, reject) => {
+                                worker.postMessage({
+                                    eventType: "CLEAR",
+                                    eventId: id
                                 });
-                            }
-                        });
+
+                                idPromises[id] = { resolve, reject };
+                                id++;
+                            });
+                        }
+
+                        proxy['importPokemon'] = function(importJSON, player) {
+                            return new Promise((resolve, reject) => {
+                                worker.postMessage({
+                                    eventType: "IMPORT_POKEMON",
+                                    eventData: {
+                                        import: JSON.parse(JSON.stringify(importJSON)),
+                                        player: player
+                                    },
+                                    eventId: id
+                                });
+
+                                idPromises[id] = { resolve, reject };
+                                id++;
+                            });
+                        }
+
+                        proxy['generateTree'] = function() {
+                            return new Promise((resolve, reject) => {
+                                worker.postMessage({
+                                    eventType: "GENERATE_TREE",
+                                    eventId: id
+                                });
+
+                                idPromises[id] = { resolve, reject };
+                                id++;
+                            });
+                        }
+
+                        proxy['populateGraph'] = function() {
+                            return new Promise((resolve, reject) => {
+                                worker.postMessage({
+                                    eventType: "POPULATE_GRAPH",
+                                    eventId: id
+                                });
+
+                                idPromises[id] = { resolve, reject };
+                                id++;
+                            });
+                        }
+                        
                         resolve(proxy);
                         return;
                     } else if (eventType === "RESULT") {
@@ -55,96 +85,30 @@
                             idPromises[eventId].resolve(eventData);
                             delete idPromises[eventId];
                         }
-                    } else if (eventType === "ERROR") {
-                        if (eventId !== undefined && idPromises[eventId]) {
-                            idPromises[eventId].reject(event.data.eventData);
-                            delete idPromises[eventId];
-                        }
                     }
                      
                 });
 
+                // Handles any errors within the worker thread itself,
+                // not individual functions
                 worker.addEventListener("error", function(error) {
                     reject(error);
                 });
-
-                worker.postMessage({eventType: "INITIALIZE", eventData: modulePath});
             })
-         
         }
 
-        console.log("Hello");
-        wasmWorker("gen1.wasm").then((proxyInstance) => {
-            proxyInstance.check()
-                .then((result) => {
-                    console.log(result);
-                })
-                .catch((error) => {
-                    console.log(error);
-                });
+        // $wasmExports = await wasmWorker("gen1.wasm");
+        // await $wasmExports.init();
+
+        const workerHost = new WASIWorkerHost(fetch("gen1.wasm"), {
+            args: [],
+            env: {},
+            stdout: (out) => console.log("stdout", out),
+            stderr: (err) => console.error("stderr", err),
+            fs: {},
         });
-        console.log("Goodbye");
 
-
-        // console.log(typeof binaryen.readBinary)
-        // const ir = binaryen.readBinary(`
-        //   (module
-        //     (memory 1 1)
-        //     (import "env" "before" (func $before))
-        //     (import "env" "sleep" (func $sleep (param i32)))
-        //     (import "env" "after" (func $after))
-        //     (export "memory" (memory 0))
-        //     (export "main" (func $main))
-        //     (func $main
-        //       (call $before)
-        //       (call $sleep (i32.const 2000))
-        //       (call $after)
-        //     )
-        //   )
-        // `);
-        // // const ir = new binaryen.parseText(fetch('gen1.wasm'));
-
-        // binaryen.setOptimizeLevel(1);
-        // ir.runPasses(['asyncify']);
-
-        // const binary = ir.emitBinary();
-        // const compiled = new WebAssembly.Module(binary);
-        // const instance = new WebAssembly.Instance(compiled, {});
-
-
-
-
-
-        // const worker = new Worker("./src/tree-worker.js");
-        // const obj = Comlink.wrap(worker);
-
-        // console.log(obj);
-        // console.log(await obj.counter);
-        // await obj.init();
-
-        // console.log(await obj.counter);
-
-
-
-
-        // const wasi = new WASI({
-        //     args: [],
-        //     env: {},
-        //     stdout: (out) => console.log("stdout", out),
-        //     stderr: (out) => console.log("stdout", out),
-        //     stdin: () => prompt("stdin:"),
-        //     fs: {},
-        // });
-        // const wasm = await WebAssembly.instantiateStreaming(
-        //     fetch("gen1.wasm"), {
-        //         ...wasi.getImportObject(),
-        //         env: {},
-        //     });
-        // // const result = wasi.start(wasm, {});
-
-        // $wasmExports = wasm.instance.exports;
-        // $wasmExports.memory.grow(100);
-        // $wasmExports.init();
+        const result = await workerHost.start();
     })
 </script>
 

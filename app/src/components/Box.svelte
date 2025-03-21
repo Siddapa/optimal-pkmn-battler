@@ -16,7 +16,7 @@
     let {mons, type} = $props();
 
     function selection(type, i) {
-        alert(index);
+        alert(i);
     }
 </script>
 

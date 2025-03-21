@@ -30,9 +30,9 @@ Trainer Box: Hitmonlee (Brick Break), Graveler (Rock Throw)
 Turn 1: Staraptor vs Hitmonlee
 **AI sees bad type match for you, switches**
 Turn 2: Staraptor vs Graveler
-**Staraptor dies to Rock Throw but you've know taken 2 brave birds**
+**Staraptor dies to Rock Throw but you've now taken 2 brave birds**
 Turn 3: Crobat vs Graveler
-**Croabt now outspeeds and kills everthing else on your team, Graveler already took some chip damage**
+**Crobat now outspeeds and kills everthing else on your team, Graveler already took some chip damage**
 
 Solution is to not lead with Hitmonlee but with Graveler. That way there's no chip damage and it can kill both birds (assuming that's actually feasible in a true Pokemon battle context)
 
@@ -51,6 +51,7 @@ Checks/Counters Guide: *https://www.smogon.com/smog/issue32/checks-and-counters*
 We can actually simplify the considerations we need to make for team generation by thinking in terms of checks/counters rather than individual turns. At the end of the day, each matchup will either be a 1v1 or pivoted until a desirable 1v1 is reached. When implemnting this, we can consider for any given matchup 3 choices:
 1. Able to 1v1 cleanly without a death
 2. Safe switch to a check (with Volt Switch, Flip Turn, etc.)
+;qa
 3. Pivot to a counter
 
 In any of these cases, there needs to be a consideration of whether or not the matchup is the most optimal one. Saving a specific counter for a later point in the fight is often the only way to win that fight.

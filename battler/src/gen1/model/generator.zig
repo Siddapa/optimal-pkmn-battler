@@ -44,7 +44,7 @@ fn generate_battles(data_file: std.fs.File, seed: u64, sample_size: u16, alloc: 
     var empty_box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer empty_box.deinit();
 
-    try builder.exhaustive_decision_tree(init_node, &empty_box, 1, 1, alloc);
+    try builder.exhaustive_decision_tree(init_node, &empty_box, 0, alloc);
 
     var i: u16 = 0;
     const total_transitions: usize = init_node.transitions.items.len;

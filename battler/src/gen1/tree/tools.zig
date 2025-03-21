@@ -102,8 +102,10 @@ pub fn side_details(side: *const pkmn.gen1.Side, options: DetailOptions, writer:
     }
 
     if (options.moves) {
-        for (active.moves, 1..) |_, i| {
-            try move_details(active, .{ .type = .Move, .data = @intCast(i) }, writer);
+        for (active.moves, 1..) |move, i| {
+            if (move.id != .None) {
+                try move_details(active, .{ .type = .Move, .data = @intCast(i) }, writer);
+            }
         }
     }
 }
