@@ -7,17 +7,19 @@ pub const tools = @import("tools.zig");
 pub const enemy_ai = @import("enemy_ai.zig");
 pub const scorer = @import("scorer.zig");
 
+pub const score_type = f32;
+
 // Maximum number of levels to build tree to
 const MAX_TURNLEVEL: u16 = 50;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 2;
+const LOOKAHEAD: u4 = 1;
 
 // Maximum number of nodes to optimize for at a given level
-const K_LARGEST: u16 = 1;
+const K_LARGEST: u16 = 2;
 
 // Minimum node score required for further extension
-const MIN_SCORE: f16 = 150;
+const MIN_SCORE: score_type = 2e-2;
 
 // Binary mask for which of the 16 rolls to generate (always keep min/max roll)
 const ROLL_INTERVALS: u16 = 0b1000000000000000;
@@ -33,7 +35,7 @@ pub const DecisionNode = struct {
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     team: [6]i8 = [_]i8{0} ** 6,
     result: pkmn.Result,
-    score: f16 = 0,
+    score: score_type = MIN_SCORE + 1, // Ensures nodes by default pass exhaustion
     previous_node: ?*DecisionNode = null,
     transitions: std.ArrayList(Transition) = undefined,
 };
@@ -53,6 +55,7 @@ pub const Update = struct {
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     actions: pkmn.gen1.chance.Actions,
     durations: pkmn.gen1.chance.Durations,
+    probability: score_type,
     result: pkmn.Result,
 };
 
@@ -85,7 +88,8 @@ pub fn optimal_decision_tree(
         // Extend leaves of scoring_nodes to maximize level for scoring
         for (scoring_nodes.items) |scoring_node| {
             if (scoring_node.result.type == .None) {
-                try exhaustive_decision_tree(scoring_node, box, 0, alloc);
+                const count = try exhaustive_decision_tree(scoring_node, box, 0, alloc);
+                print("Exhaust Count: {}\r", .{count});
 
                 // if (scoring_node.previous_node) |previous_node| {
                 //     const tc, _ = try get_parent_transition(previous_node, scoring_node);
@@ -95,6 +99,7 @@ pub fn optimal_decision_tree(
 
             try scored_nodes.append(scoring_node);
         }
+        print("\n", .{});
 
         // Keep only the K_LARGEST nodes
         std.mem.sort(*DecisionNode, scored_nodes.items, {}, compare_score);
@@ -136,8 +141,9 @@ pub fn exhaustive_decision_tree(
     box: *std.ArrayList(pkmn.gen1.Pokemon),
     level: u16,
     alloc: std.mem.Allocator,
-) !void {
-    if (level < LOOKAHEAD and curr_node.score > MIN_SCORE) {
+) !u64 {
+    var count: u64 = 0;
+    if (level < LOOKAHEAD and curr_node.score >= MIN_SCORE) {
         if (curr_node.transitions.items.len == 0) {
             // Select durations from transition of curr_node's parent to itself
             var durations = pkmn.gen1.chance.Durations{};
@@ -169,7 +175,7 @@ pub fn exhaustive_decision_tree(
                             .previous_node = curr_node,
                             .transitions = std.ArrayList(Transition).init(alloc),
                         };
-                        child_node.score = scorer.score_node(child_node);
+                        child_node.score = try scorer.score_node(child_node, new_update.probability);
                         try curr_node.transitions.append(.{
                             .choices = .{ player_choice, enemy_choice },
                             .actions = new_update.actions,
@@ -177,7 +183,8 @@ pub fn exhaustive_decision_tree(
                             .next_node = child_node,
                             .box_switch = null,
                         });
-                        try exhaustive_decision_tree(
+                        count += 1;
+                        count += try exhaustive_decision_tree(
                             child_node,
                             box,
                             level + 1,
@@ -224,7 +231,7 @@ pub fn exhaustive_decision_tree(
                                         .previous_node = curr_node,
                                         .transitions = std.ArrayList(Transition).init(alloc),
                                     };
-                                    child_node.score = scorer.score_node(child_node);
+                                    child_node.score = try scorer.score_node(child_node, new_update.probability);
                                     try curr_node.transitions.append(.{
                                         .choices = .{ switch_choice, enemy_choice },
                                         .actions = new_update.actions,
@@ -232,7 +239,8 @@ pub fn exhaustive_decision_tree(
                                         .next_node = child_node,
                                         .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot, .box_id = box_index },
                                     });
-                                    try exhaustive_decision_tree(
+                                    count += 1;
+                                    count += try exhaustive_decision_tree(
                                         child_node,
                                         box,
                                         level + 1,
@@ -248,10 +256,11 @@ pub fn exhaustive_decision_tree(
             }
         } else {
             for (curr_node.transitions.items) |transition| {
-                try exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
+                count += try exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
             }
         }
     }
+    return count;
 }
 
 pub fn transitions(
@@ -370,6 +379,7 @@ pub fn transitions(
 
                 b = battle;
                 const result = try b.update(c1, c2, &opts);
+
                 if (try actions_map.fetchPut(a, 1)) |old| {
                     _ = old;
                 } else {
@@ -377,11 +387,11 @@ pub fn transitions(
                         .battle = b,
                         .actions = a,
                         .durations = opts.chance.durations,
+                        .probability = @as(score_type, @floatFromInt(opts.chance.probability.p)) / 
+                                       @as(score_type, @floatFromInt(opts.chance.probability.q,)),
                         .result = result,
                     });
                 }
-
-                
 
                 try p.add(&opts.chance.probability);
 
@@ -421,6 +431,7 @@ pub fn transitions(
 }
 
 fn compare_score(_: void, n1: *DecisionNode, n2: *DecisionNode) bool {
+    // TODO Improper comparison
     if (n1.score > n2.score) {
         return true;
     } else {

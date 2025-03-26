@@ -139,6 +139,27 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     return battle;
 }
 
+pub fn display_choice(curr_node: *builder.DecisionNode, transition: builder.Transition, comptime player: usize, writer: anytype) !void {
+    const choice = transition.choices[player];
+    const side = if (player == 0) .P1 else .P2;
+    switch (choice.type) {
+        .Move => {
+            try writer.print("{s: <15}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)});
+        },
+        .Switch => {
+            if (choice.data != 42) {
+                if (transition.box_switch) |box_switch| {
+                    try writer.print("{s: <15}", .{@tagName(box_switch.added_pokemon.species)});
+                } else {
+                    try writer.print("{s: <15}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)});
+                }
+            }
+        },
+        else => {},
+    }
+    try writer.writeAll(" ");
+}
+
 pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype) !void {
     var curr_node = start_node;
     while (true) {
@@ -165,18 +186,25 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
         try writer.print("Select one of the following choices: \n", .{});
         for (curr_node.transitions.items, 0..) |transition, i| {
             const next_node = transition.next_node;
-            if (transition.choices[0].type == pkmn.Choice.Type.Move) {
-                try writer.print("{}={s}/M ({}), ", .{ i + 1, @tagName(curr_node.battle.side(.P1).stored().move(transition.choices[0].data).id), next_node.score });
-            } else if (transition.choices[0].type == pkmn.Choice.Type.Switch and transition.choices[0].data != 42) {
-                if (transition.box_switch) |box_switch| {
-                    try writer.print("{}={s}/S ({}), ", .{ i + 1, @tagName(box_switch.added_pokemon.species), next_node.score });
-                } else {
-                    try writer.print("{}={s}/S ({}), ", .{ i + 1, @tagName(curr_node.battle.side(.P1).get(transition.choices[0].data).species), next_node.score });
-                }
-            } else if (transition.choices[0].type == pkmn.Choice.Type.Pass) {
-                try writer.print("c=continue, ", .{});
-            }
+            const next_node_transitions = next_node.transitions.items.len;
+
+            try writer.print("{:02}=", .{
+                i + 1,
+            });
+
+            try display_choice(curr_node, transition, 0, writer);
+            try display_choice(curr_node, transition, 1, writer);
+
+            try writer.print("{d:05}, {:02}, ", .{
+                next_node.score,
+                next_node_transitions,
+            });
+
+            try writer.print("    {}, ", .{transition.actions});
+
+            try writer.writeAll("\n");
         }
+
         if (curr_node.previous_node) |_| {
             try writer.print("p=previous turn, q=quit\n", .{});
         } else {

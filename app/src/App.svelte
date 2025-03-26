@@ -100,15 +100,19 @@
         // $wasmExports = await wasmWorker("gen1.wasm");
         // await $wasmExports.init();
 
-        const workerHost = new WASIWorkerHost(fetch("gen1.wasm"), {
+        const binaryURL = new URL("gen1.wasm", window.location.origin).toString();
+        const workerHost = new WASIWorkerHost(binaryURL, {
             args: [],
             env: {},
             stdout: (out) => console.log("stdout", out),
-            stderr: (err) => console.error("stderr", err),
+            stderr: (err) => console.log("stderr", err),
             fs: {},
         });
 
         const result = await workerHost.start();
+
+        workerHost.pushStdin("bye world");
+        console.log("Finished");
     })
 </script>
 

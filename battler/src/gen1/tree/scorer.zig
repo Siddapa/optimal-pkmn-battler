@@ -1,35 +1,45 @@
-const builder = @import("builder.zig");
+const std = @import("std");
+const print = std.debug.print;
+
 const pkmn = @import("pkmn");
+const builder = @import("builder.zig");
+const score_type = builder.score_type;
 
 pub const NTN = struct {};
 
 pub const Side = struct {};
 
-pub fn score_node(scoring_node: *builder.DecisionNode) f16 {
+pub fn score_node(scoring_node: *builder.DecisionNode, probability: builder.score_type) !score_type {
     const battle = &scoring_node.battle;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);
 
+    var score: score_type = 0;
     switch (scoring_node.result.type) {
         .None => {
-            var score: f16 = 0;
+            score -= damage_per_turn(player_side, battle.turn);
+            score += damage_per_turn(enemy_side, battle.turn);
 
-            score -= (damage_per_turn(player_side, battle.turn));
-            score += (damage_per_turn(enemy_side, battle.turn));
-
-            return score;
+            score += probability * 10000000;
         },
-        .Win => return 100,
-        else => return 0,
+        .Win => {
+            score += 100;
+        },
+        else => {},
     }
+
+    // print("Probability: {}\n\n", .{scoring_node.probability});
+    // print("Score: {}\n", .{score});
+    return score;
 }
 
-pub fn damage_per_turn(side: *pkmn.gen1.Side, turn: u16) f16 {
-    var total_damage: u16 = 0;
+pub fn damage_per_turn(side: *pkmn.gen1.Side, turn: u16) score_type {
+    var total_damage: score_type = 0;
     for (side.pokemon) |mon| {
-        total_damage += mon.stats.hp - mon.hp;
+        total_damage += @as(score_type, @floatFromInt(mon.stats.hp - mon.hp));
     }
-    return @as(f16, @floatFromInt(total_damage)) / @as(f16, @floatFromInt(turn));
+    total_damage *= 1 / @as(score_type, @floatFromInt(turn));
+    return total_damage;
 }
 
 pub fn score_move(scoring_node: *builder.DecisionNode, turn_choice: builder.TurnChoice) u16 {

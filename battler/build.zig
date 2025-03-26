@@ -4,7 +4,7 @@ var alloc = gpa.allocator();
 
 pub fn build(b: *std.Build) !void {
     const generation = b.option([]const u8, "generation", "Specify which generation") orelse "gen1";
-    const test_filters = b.option([]const []const u8, "test-filters", "Skip tests that do not match any filter") orelse &[0][]const u8{};
+    // const test_filters = b.option([]const []const u8, "test-filters", "Skip tests that do not match any filter") orelse &[0][]const u8{};
 
     const default_options = b.standardTargetOptions(.{});
 
@@ -45,10 +45,11 @@ pub fn build(b: *std.Build) !void {
     const tests_source = try std.fmt.allocPrint(alloc, "src/{s}/tests.zig", .{generation});
     defer alloc.free(tests_name);
     defer alloc.free(tests_source);
-    const tests = b.addTest(.{
+    const tests = b.addExecutable(.{
         .name = tests_name,
         .root_source_file = b.path(tests_source),
-        .filters = test_filters,
+        .optimize = .Debug,
+        .target = default_options,
     });
 
     // Modules

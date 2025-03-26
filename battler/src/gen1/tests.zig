@@ -1,11 +1,13 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const alloc = std.testing.allocator;
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var alloc = gpa.allocator();
 
 const pkmn = @import("pkmn");
 
 const builder = @import("tree");
 const enemy_ai = builder.enemy_ai;
+const tools = builder.tools;
 
 var stdout = std.io.getStdOut().writer();
 var stderr = std.io.getStdErr().writer();
@@ -17,7 +19,13 @@ var options = pkmn.battle.options(
     pkmn.gen1.Calc{},
 );
 
-test "BaseTransitions" {
+pub fn main() !void {
+    // try optimal1();
+    // try optimal1();
+    try exhaust1();
+}
+
+fn base_transitions() !void {
     try stderr.print("Transitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
@@ -33,7 +41,7 @@ test "BaseTransitions" {
     try run_transitions(battle, result);
 }
 
-test "EnemySwitchTransitions" {
+fn enemy_switch_transitions() !void {
     try stderr.print("EnemySwitchTransitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
@@ -63,7 +71,7 @@ test "EnemySwitchTransitions" {
     try run_transitions(battle, result);
 }
 
-test "BoxSwitchTransitions" {
+fn box_switch_transitions() !void {
     try stderr.print("BoxSwitchTransitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
@@ -81,7 +89,32 @@ test "BoxSwitchTransitions" {
     try run_transitions(battle, result);
 }
 
-test "OptimalWASM" {
+fn exhaust1() !void {
+    const battle = builder.tools.init_battle(&.{
+        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
+    }, &.{
+        .{ .species = .Pidgey, .moves = &.{.Pound} },
+        .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
+        .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
+        .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
+        .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
+        .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
+    });
+
+    const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
+        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
+        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
+        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
+        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
+        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
+    };
+
+    const runtime = try run_exhaust(battle, &box_pokemon);
+
+    try stderr.print("Exhaust1: {d} ns\n", .{runtime});
+}
+
+fn optimalWASM() !void {
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
     }, &.{
@@ -95,41 +128,12 @@ test "OptimalWASM" {
         .{ .species = .Rhyhorn, .moves = &.{ .RockThrow, .Mist, .WaterGun, .Psybeam } },
     };
 
-    const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
-    try run_optimal(battle, &box_pokemon);
-    const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+    const runtime = try run_optimal(battle, &box_pokemon);
 
-    try stderr.print("OptimalWASM: {d} ms\n", .{end_time - start_time});
+    try stderr.print("OptimalWASM: {d} ms\n", .{runtime});
 }
 
-test "Exhaust1" {
-    const battle = builder.tools.init_battle(&.{
-        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
-    }, &.{
-        .{ .species = .Pidgey, .moves = &.{.Pound} },
-        .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
-        .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
-        .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
-        .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
-        .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
-    });
-
-    const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
-        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
-        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
-        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
-        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
-        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
-    };
-
-    const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
-    try run_exhaust(battle, &box_pokemon);
-    const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
-
-    try stderr.print("Exhaust1: {d} ms\n", .{end_time - start_time});
-}
-
-test "Optimal1" {
+fn optimal1() !void {
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
@@ -148,47 +152,45 @@ test "Optimal1" {
         .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
     };
 
-    const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
-    try run_optimal(battle, &box_pokemon);
-    const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+    const runtime = try run_optimal(battle, &box_pokemon);
 
-    try stderr.print("Optimal1: {d} ms\n", .{end_time - start_time});
+    try stderr.print("Optimal1: {d} ms\n", .{runtime});
 }
 
-// test "Random" {
-//     try stderr.print("Random\n", .{});
-//     var battle = builder.tools.init_battle(&.{
-//         .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
-//     }, &.{
-//         .{ .species = .Pidgey, .moves = &.{.Pound} },
-//     });
-//
-//     var prng = std.Random.DefaultPrng.init(0);
-//     var random = prng.random();
-//
-//     var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-//     var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-//
-//     var c1 = pkmn.Choice{};
-//     var c2 = pkmn.Choice{};
-//     var result = battle.update(c1, c2, &options) catch pkmn.Result{};
-//     while (result.type == .None) {
-//         const max1 = battle.choices(.P1, result.p1, &player_choices);
-//         const n1 = random.uintLessThan(u8, max1);
-//         c1 = player_choices[n1];
-//
-//         const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices));
-//         const n2 = random.uintLessThan(u8, max2);
-//         c2 = enemy_choices[n2];
-//
-//         try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stderr);
-//         // TODO Also display transition
-//         try stderr.print("\n\n", .{});
-//
-//         result = battle.update(c1, c2, &options) catch pkmn.Result{};
-//     }
-//     try stderr.print("{}\n", .{result.type});
-// }
+fn random() !void {
+    try stderr.print("Random\n", .{});
+    var battle = builder.tools.init_battle(&.{
+        .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
+    }, &.{
+        .{ .species = .Pidgey, .moves = &.{.Pound} },
+    });
+
+    var prng = std.Random.DefaultPrng.init(0);
+    var rand = prng.random();
+
+    var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+
+    var c1 = pkmn.Choice{};
+    var c2 = pkmn.Choice{};
+    var result = battle.update(c1, c2, &options) catch pkmn.Result{};
+    while (result.type == .None) {
+        const max1 = battle.choices(.P1, result.p1, &player_choices);
+        const n1 = rand.uintLessThan(u8, max1);
+        c1 = player_choices[n1];
+
+        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices));
+        const n2 = rand.uintLessThan(u8, max2);
+        c2 = enemy_choices[n2];
+
+        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stderr);
+        // TODO Also display transition
+        try stderr.print("\n\n", .{});
+
+        result = battle.update(c1, c2, &options) catch pkmn.Result{};
+    }
+    try stderr.print("{}\n", .{result.type});
+}
 
 fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !void {
     var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
@@ -238,7 +240,7 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     try stderr.print("Enemy Choices: {}\n", .{enemy_valid_choices.len});
 }
 
-fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
+fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u128 {
     var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
@@ -256,13 +258,31 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
         .previous_node = null,
         .transitions = std.ArrayList(builder.Transition).init(alloc),
     };
-    _ = builder.exhaustive_decision_tree(root, &box, 0, alloc) catch null;
-    assert(builder.count_nodes(root) != 0);
+
+    const start_time = @as(u128, @bitCast(std.time.nanoTimestamp()));
+
+    _ = try builder.exhaustive_decision_tree(root, &box, 0, alloc);
+
+    const end_time = @as(u128, @bitCast(std.time.nanoTimestamp()));
+
+    // assert(node_count != 0);
+
+    for (root.transitions.items) |transition| {
+        try tools.display_choice(root, transition, 0, stderr);
+        try tools.display_choice(root, transition, 1, stderr);
+        try stderr.print("{d: <10} {s: <30} {s: <30}\n", .{
+            transition.next_node.score,
+            transition.actions.p1,
+            transition.actions.p2,
+        });
+    }
 
     builder.free_tree(root, alloc);
+
+    return end_time - start_time;
 }
 
-fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !void {
+fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u64 {
     var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
@@ -272,11 +292,18 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     var b = battle;
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
+    const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+
     const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, &box, alloc);
+
+    const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+
     try builder.tools.traverse_decision_tree(root, stdout);
 
     const num_of_nodes = builder.count_nodes(root);
     try stderr.print("Num Of Nodes: {}\n", .{num_of_nodes});
 
     builder.free_tree(root, alloc);
+
+    return end_time - start_time;
 }

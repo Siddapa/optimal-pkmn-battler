@@ -143,8 +143,8 @@ export fn getNumOfNextTurns(curr_node: *tree.DecisionNode) usize {
     return curr_node.transitions.items.len;
 }
 
-export fn getScore(curr_node: *tree.DecisionNode) u16 {
-    return @as(u16, @intFromFloat(curr_node.score));
+export fn getScore(curr_node: *tree.DecisionNode) usize {
+    return @intFromFloat(curr_node.score);
 }
 
 export fn getResult(curr_node: *tree.DecisionNode) i8 {
@@ -219,5 +219,17 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
         } else {
             enemy_imports.append(parsed.value) catch return void{};
         }
+    }
+}
+
+// WASIWorkerHost requires _start export
+export fn _start() void {
+    const stdin = std.io.getStdIn().reader();
+    var buf: [128]u8 = undefined;
+
+    while (true) {
+        const length: usize = stdin.read(&buf) catch return;
+        _ = length;
+        print("{s}\n", .{buf});
     }
 }
