@@ -1,4 +1,5 @@
 const std = @import("std");
+var da: std.heap.GeneralPurposeAllocator(.{}) = .init;
 const print = std.debug.print;
 const assert = std.debug.assert;
 
@@ -12,8 +13,7 @@ const regressor = @import("regressor.zig");
 const import = @import("import.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+    const alloc = da.allocator();
     const stdout = std.io.getStdOut().writer();
 
     const args = std.os.argv;

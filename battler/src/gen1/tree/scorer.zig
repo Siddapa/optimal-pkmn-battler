@@ -3,27 +3,43 @@ const print = std.debug.print;
 
 const pkmn = @import("pkmn");
 const builder = @import("builder.zig");
-const score_type = builder.score_type;
+const score_t = builder.score_t;
 
 pub const NTN = struct {};
 
 pub const Side = struct {};
 
-pub fn score_node(scoring_node: *builder.DecisionNode, probability: builder.score_type) !score_type {
+pub fn score_node(scoring_node: *builder.DecisionNode, probability: builder.score_t) !score_t {
     const battle = &scoring_node.battle;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);
 
-    var score: score_type = 0;
+    var score: score_t = 0;
     switch (scoring_node.result.type) {
         .None => {
-            score -= damage_per_turn(player_side, battle.turn);
-            score += damage_per_turn(enemy_side, battle.turn);
+            score += 500 * dead(enemy_side);
+            score -= 500 * dead(player_side);
 
-            score += probability * 10000000;
+            score += 2 * damage_per_turn(enemy_side, battle.turn, false);
+            score -= 1 * damage_per_turn(player_side, battle.turn, true);
+
+            score += status(enemy_side);
+            score -= status(player_side);
+
+            score += status(enemy_side);
+            score -= status(player_side);
+
+            var prob_mul: score_t = 0;
+            // Switches are high probability events that should be weighed separately
+            if (probability < 1e-3) {
+                prob_mul = 1000000;
+            } else {
+                prob_mul = 100;
+            }
+            score += prob_mul * probability;
         },
         .Win => {
-            score += 100;
+            score += std.math.floatMax(score_t);
         },
         else => {},
     }
@@ -33,38 +49,75 @@ pub fn score_node(scoring_node: *builder.DecisionNode, probability: builder.scor
     return score;
 }
 
-pub fn damage_per_turn(side: *pkmn.gen1.Side, turn: u16) score_type {
-    var total_damage: score_type = 0;
+fn dead(side: *pkmn.gen1.Side) score_t {
+    var count: score_t = 0;
     for (side.pokemon) |mon| {
-        total_damage += @as(score_type, @floatFromInt(mon.stats.hp - mon.hp));
+        if (mon.hp == 0) {
+            count += 1;
+        }
     }
-    total_damage *= 1 / @as(score_type, @floatFromInt(turn));
+    return count;
+}
+
+fn damage_per_turn(side: *pkmn.gen1.Side, turn: u16, player: bool) score_t {
+    var total_damage: score_t = 0;
+    for (side.pokemon) |mon| {
+        total_damage += @as(score_t, @floatFromInt(mon.stats.hp - mon.hp));
+    }
+    total_damage *= 1 / @as(score_t, @floatFromInt(turn));
+    if (total_damage == 0 and player) {
+        // Ensure damage taken on player side is scored heavily
+        return 10000;
+    }
     return total_damage;
 }
 
-pub fn score_move(scoring_node: *builder.DecisionNode, turn_choice: builder.TurnChoice) u16 {
-    var sum: f32 = 0;
+// TODO Account for pre-statusing strategies
+fn status(side: *pkmn.gen1.Side) score_t {
+    const active = side.active;
+    const stored = side.stored();
+    const sleep_score = 500;
 
-    const previous_node = scoring_node.previous_node orelse return 0;
+    if (pkmn.gen1.Status.is(stored.status, .SLP)) {
+        return sleep_score;
+    } else if (pkmn.gen1.Status.is(stored.status, .PSN)) {
+        return 100;
+    } else if (pkmn.gen1.Status.is(stored.status, .BRN)) {
+        return 100;
+    } else if (pkmn.gen1.Status.is(stored.status, .FRZ)) {
+        return 500;
+    } else if (pkmn.gen1.Status.is(stored.status, .PAR)) {
+        return @floatFromInt(active.stats.spe);
+    } else if (pkmn.gen1.Status.is(stored.status, .EXT)) {
+        // .EXT identifies BADLY TOXIC or self-inflicted sleep
+        // depending on the encoding
+        if (stored.status == pkmn.gen1.Status.TOX) return 100 else return sleep_score;
+    }
+    // Techniclly unnecessary since if's are exhaustive
+    return 0;
+}
 
-    const previous_battle = previous_node.battle;
-    // const previous_player_active = previous_battle.side(.P1).active;
-    const previous_player_stored = previous_battle.side(.P1).stored();
-    // const previous_enemy_active = previous_battle.side(.P2).active;
-    const previous_enemy_stored = previous_battle.side(.P2).stored();
+fn volatiles(side: *pkmn.gen1.Side) score_t {
+    const active = side.active;
+    // const stored = side.stored();
 
-    const scoring_battle = scoring_node.battle;
-    // const scoring_player_active = scoring_battle.side(.P1).active;
-    const scoring_player_stored = scoring_battle.side(.P1).stored();
-    // const scoring_enemy_active = scoring_battle.side(.P2).active;
-    const scoring_enemy_stored = scoring_battle.side(.P2).stored();
+    const volatile_map = std.StaticStringMap(type).initComptime(.{
+        .{ "Bide", .Bide },
+    });
 
-    _ = turn_choice.choices;
-
-    // Damage Dealt
-    sum += 0.01 * (previous_enemy_stored - scoring_enemy_stored);
-    // Damage Taken
-    sum -= 0.01 * (previous_player_stored - scoring_player_stored);
-
-    return sum;
+    inline for (std.meta.fields(pkmn.gen1.Volatiles)) |v| {
+        switch (@FieldType(pkmn.gen1.Volatiles, v.name)) {
+            bool => {
+                const value: bool = @field(active.volatiles, v.name);
+                switch (volatile_map.get(value)) {
+                    .Bide => return 10,
+                }
+            },
+            else => {
+                // Cast all non-bool fields to u16 (largest integer field)
+                const value: u16 = @intCast(@field(active.volatiles, v.name));
+                _ = value;
+            },
+        }
+    }
 }

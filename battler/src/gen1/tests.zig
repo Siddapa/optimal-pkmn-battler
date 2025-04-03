@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var alloc = gpa.allocator();
+var da: std.heap.DebugAllocator(.{}) = .init;
+var alloc = da.allocator();
 
 const pkmn = @import("pkmn");
 
@@ -10,7 +10,6 @@ const enemy_ai = builder.enemy_ai;
 const tools = builder.tools;
 
 var stdout = std.io.getStdOut().writer();
-var stderr = std.io.getStdErr().writer();
 
 var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
 var options = pkmn.battle.options(
@@ -20,13 +19,15 @@ var options = pkmn.battle.options(
 );
 
 pub fn main() !void {
-    // try optimal1();
-    // try optimal1();
-    try exhaust1();
+    // try optimalWASM();
+    try optimal1();
+    // try exhaust();
+    // try exhaust1();
+    // try exhaust2();
 }
 
 fn base_transitions() !void {
-    try stderr.print("Transitions\n", .{});
+    try stdout.print("Transitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
@@ -42,7 +43,7 @@ fn base_transitions() !void {
 }
 
 fn enemy_switch_transitions() !void {
-    try stderr.print("EnemySwitchTransitions\n", .{});
+    try stdout.print("EnemySwitchTransitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
@@ -66,13 +67,13 @@ fn enemy_switch_transitions() !void {
     // Moves are harcoded so changing initial conditions could break test
     result = try battle.update(player_valid_choices[1], enemy_valid_choices[0], &options);
 
-    try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stderr);
+    try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stdout);
 
     try run_transitions(battle, result);
 }
 
 fn box_switch_transitions() !void {
-    try stderr.print("BoxSwitchTransitions\n", .{});
+    try stdout.print("BoxSwitchTransitions\n", .{});
 
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .Flamethrower, .Growl, .PoisonPowder, .Reflect } },
@@ -89,11 +90,17 @@ fn box_switch_transitions() !void {
     try run_transitions(battle, result);
 }
 
+fn exhaust() !void {
+    const random_setup = try random_battle(@as(u64, @bitCast(std.time.milliTimestamp())));
+    const runtime = try run_exhaust(random_setup.battle, random_setup.box);
+    try stdout.print("Exhaust1: {d} ms\n\n", .{runtime});
+}
+
 fn exhaust1() !void {
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
     }, &.{
-        .{ .species = .Pidgey, .moves = &.{.Pound} },
+        .{ .species = .Pidgey, .moves = &.{ .Pound, .QuickAttack } },
         .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
         .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
         .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
@@ -109,9 +116,40 @@ fn exhaust1() !void {
         .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
     };
 
-    const runtime = try run_exhaust(battle, &box_pokemon);
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
+    defer box.deinit();
+    for (box_pokemon) |mon| {
+        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
+    }
 
-    try stderr.print("Exhaust1: {d} ns\n", .{runtime});
+    const runtime = try run_exhaust(battle, box);
+
+    try stdout.print("Exhaust1: {d} ms\n\n", .{runtime});
+}
+
+fn exhaust2() !void {
+    const battle = builder.tools.init_battle(&.{
+        .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
+    }, &.{
+        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .HyperBeam, .DrillPeck, .Peck } },
+        .{ .species = .Chansey, .moves = &.{ .Counter, .SeismicToss, .Strength, .Absorb } },
+        .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
+    });
+
+    const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
+        .{ .species = .Kingler, .moves = &.{ .SandAttack, .Headbutt, .HornAttack, .TailWhip } },
+        .{ .species = .Rhyhorn, .moves = &.{ .RockThrow, .Mist, .WaterGun, .Psybeam } },
+    };
+
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
+    defer box.deinit();
+    for (box_pokemon) |mon| {
+        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
+    }
+
+    const runtime = try run_exhaust(battle, box);
+
+    try stdout.print("Exhaust2: {d} ms\n\n", .{runtime});
 }
 
 fn optimalWASM() !void {
@@ -130,7 +168,7 @@ fn optimalWASM() !void {
 
     const runtime = try run_optimal(battle, &box_pokemon);
 
-    try stderr.print("OptimalWASM: {d} ms\n", .{runtime});
+    try stdout.print("OptimalWASM: {d} ms\n", .{runtime});
 }
 
 fn optimal1() !void {
@@ -154,11 +192,11 @@ fn optimal1() !void {
 
     const runtime = try run_optimal(battle, &box_pokemon);
 
-    try stderr.print("Optimal1: {d} ms\n", .{runtime});
+    try stdout.print("Optimal1: {d} ms\n", .{runtime});
 }
 
 fn random() !void {
-    try stderr.print("Random\n", .{});
+    try stdout.print("Random\n", .{});
     var battle = builder.tools.init_battle(&.{
         .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
     }, &.{
@@ -183,13 +221,13 @@ fn random() !void {
         const n2 = rand.uintLessThan(u8, max2);
         c2 = enemy_choices[n2];
 
-        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stderr);
+        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stdout);
         // TODO Also display transition
-        try stderr.print("\n\n", .{});
+        try stdout.print("\n\n", .{});
 
         result = battle.update(c1, c2, &options) catch pkmn.Result{};
     }
-    try stderr.print("{}\n", .{result.type});
+    try stdout.print("{}\n", .{result.type});
 }
 
 fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !void {
@@ -216,39 +254,55 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
             total_updates += updates.len;
 
             for (updates) |update| {
-                try stderr.print("Actions: {}\n", .{update.actions});
-                try stderr.writeAll("\n");
+                try stdout.print("Actions: {}\n", .{update.actions});
+                try stdout.writeAll("\n");
 
-                try builder.tools.side_details(battle.side(.P1), builder.tools.DetailOptions.no_moves(), stderr);
-                if (player_choice.type == .Move) try builder.tools.move_details(battle.side(.P1).active, player_choice, stderr);
-                try stderr.writeAll("\n");
+                try builder.tools.side_details(battle.side(.P1), builder.tools.DetailOptions.no_moves(), stdout);
+                if (player_choice.type == .Move) try builder.tools.move_details(battle.side(.P1).active, player_choice, stdout);
+                try stdout.writeAll("\n");
 
-                try builder.tools.side_details(battle.side(.P2), builder.tools.DetailOptions.no_moves(), stderr);
-                if (enemy_choice.type == .Move) try builder.tools.move_details(battle.side(.P2).active, enemy_choice, stderr);
-                try stderr.writeAll("\n");
+                try builder.tools.side_details(battle.side(.P2), builder.tools.DetailOptions.no_moves(), stdout);
+                if (enemy_choice.type == .Move) try builder.tools.move_details(battle.side(.P2).active, enemy_choice, stdout);
+                try stdout.writeAll("\n");
 
-                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions.no_moves(), stderr);
+                try builder.tools.battle_details(update.battle, builder.tools.DetailOptions.no_moves(), stdout);
 
-                try stderr.writeAll("\n\n\n\n");
+                try stdout.writeAll("\n\n\n\n");
             }
-            try stderr.print("\n", .{});
+            try stdout.print("\n", .{});
         }
     }
 
-    try stderr.print("# of Updates: {}\n", .{total_updates});
-    try stderr.print("Player Choices: {}\n", .{player_valid_choices.len});
-    try stderr.print("Enemy Choices: {}\n", .{enemy_valid_choices.len});
+    try stdout.print("# of Updates: {}\n", .{total_updates});
+    try stdout.print("Player Choices: {}\n", .{player_valid_choices.len});
+    try stdout.print("Enemy Choices: {}\n", .{enemy_valid_choices.len});
 }
 
-fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u128 {
+fn random_battle(seed: u64) !struct {
+    battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
+    box: std.ArrayList(pkmn.gen1.Pokemon),
+} {
+    var rng = pkmn.PSRNG.init(seed);
+    const rand_opts = pkmn.gen1.helpers.Options{
+        .cleric = false,
+        .block = false,
+    };
+
+    const battle = pkmn.gen1.helpers.Battle.random(&rng, rand_opts);
+
     var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-    defer box.deinit();
-    for (box_pokemon) |mon| {
-        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
+    const box_size = rng.range(usize, 1, 10);
+    for (0..box_size) |_| {
+        try box.append(pkmn.gen1.helpers.Pokemon.random(&rng, rand_opts));
     }
 
+    return .{ .battle = battle, .box = box };
+}
+
+fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box: std.ArrayList(pkmn.gen1.Pokemon)) !u128 {
     var b = battle;
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
+    var edit_box = box;
 
     const root: *builder.DecisionNode = try alloc.create(builder.DecisionNode);
     root.* = .{
@@ -259,27 +313,67 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
         .transitions = std.ArrayList(builder.Transition).init(alloc),
     };
 
-    const start_time = @as(u128, @bitCast(std.time.nanoTimestamp()));
+    const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    _ = try builder.exhaustive_decision_tree(root, &box, 0, alloc);
+    _ = try builder.exhaustive_decision_tree(root, &edit_box, 0, alloc);
 
-    const end_time = @as(u128, @bitCast(std.time.nanoTimestamp()));
+    const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    // assert(node_count != 0);
+    try tools.battle_details(b, tools.DetailOptions.all(), stdout);
+    try stdout.writeAll("\n");
 
+    try stdout.writeAll("Score Sorted\n");
+    std.mem.sort(builder.Transition, root.transitions.items, {}, compare_score);
     for (root.transitions.items) |transition| {
-        try tools.display_choice(root, transition, 0, stderr);
-        try tools.display_choice(root, transition, 1, stderr);
-        try stderr.print("{d: <10} {s: <30} {s: <30}\n", .{
+        try tools.display_choice(root, transition, 0, stdout);
+        try tools.hp_details(transition.next_node.battle.side(.P1).stored(), stdout);
+        try stdout.writeAll(" | ");
+
+        try tools.display_choice(root, transition, 1, stdout);
+        try tools.hp_details(transition.next_node.battle.side(.P2).stored(), stdout);
+        try stdout.writeAll(" | ");
+
+        try stdout.print("{d:10.2} {d:.8} {s: <100} {s: <100}\n", .{
             transition.next_node.score,
+            transition.next_node.probability,
             transition.actions.p1,
             transition.actions.p2,
         });
+
+        try stdout.writeAll("----------------------------------------------------------------------------------------\n");
     }
+
+    // try stdout.writeAll("\nProbability Sorted\n");
+
+    // std.mem.sort(builder.Transition, root.transitions.items, {}, compare_prob);
+    // for (root.transitions.items) |transition| {
+    //     try tools.display_choice(root, transition, 0, stdout);
+    //     try tools.display_choice(root, transition, 1, stdout);
+    //     try stdout.print("{d:10.2} {d:.8} {s:100} {s:100}\n", .{
+    //         transition.next_node.score,
+    //         transition.next_node.probability,
+    //         transition.actions.p1,
+    //         transition.actions.p2,
+    //     });
+    // }
 
     builder.free_tree(root, alloc);
 
     return end_time - start_time;
+}
+
+fn compare_score(_: void, t1: builder.Transition, t2: builder.Transition) bool {
+    if (t1.next_node.score > t2.next_node.score) {
+        return true;
+    }
+    return false;
+}
+
+fn compare_prob(_: void, t1: builder.Transition, t2: builder.Transition) bool {
+    if (t1.next_node.probability > t2.next_node.probability) {
+        return true;
+    }
+    return false;
 }
 
 fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u64 {
@@ -301,7 +395,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     try builder.tools.traverse_decision_tree(root, stdout);
 
     const num_of_nodes = builder.count_nodes(root);
-    try stderr.print("Num Of Nodes: {}\n", .{num_of_nodes});
+    try stdout.print("Num Of Nodes: {}\n", .{num_of_nodes});
 
     builder.free_tree(root, alloc);
 

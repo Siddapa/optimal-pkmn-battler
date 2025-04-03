@@ -1,6 +1,6 @@
 const std = @import("std");
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var alloc = gpa.allocator();
+var da: std.heap.DebugAllocator(.{}) = .init;
+var alloc = da.allocator();
 
 pub fn build(b: *std.Build) !void {
     const generation = b.option([]const u8, "generation", "Specify which generation") orelse "gen1";
@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     // Modules
-    const pkmn = b.dependency("pkmn", .{ .showdown = true, .log = false, .chance = true, .calc = true });
+    const pkmn = b.dependency("pkmn", .{ .showdown = false, .log = false, .chance = true, .calc = true });
     wasm.root_module.addImport("pkmn", pkmn.module("pkmn"));
     train.root_module.addImport("pkmn", pkmn.module("pkmn"));
     generate.root_module.addImport("pkmn", pkmn.module("pkmn"));

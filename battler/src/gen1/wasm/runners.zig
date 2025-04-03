@@ -1,7 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const json = std.json;
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var da: std.heap.DebugAllocator(.{}) = .init;
 var import_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 
@@ -9,7 +9,7 @@ const tree = @import("tree");
 const pkmn = @import("pkmn");
 const import = @import("import.zig");
 
-var tree_gen_alloc = gpa.allocator();
+var tree_gen_alloc = da.allocator();
 var import_alloc: std.mem.Allocator = undefined;
 var tree_prep_alloc: std.mem.Allocator = undefined;
 

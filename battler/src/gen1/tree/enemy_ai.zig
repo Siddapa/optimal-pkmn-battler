@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var da: std.heap.GeneralPurposeAllocator(.{}) = .init;
 
 const pkmn = @import("pkmn");
 const Move = pkmn.gen1.Move;
@@ -18,7 +18,7 @@ const ChoiceData = struct {
 /// @arg(good_ai) should be enabled when facing certain trainers
 /// TODO Track number of turns on field in main loop
 pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8, out: []pkmn.Choice) usize {
-    const alloc = gpa.allocator();
+    const alloc = da.allocator();
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);

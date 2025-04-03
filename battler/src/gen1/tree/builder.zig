@@ -7,19 +7,19 @@ pub const tools = @import("tools.zig");
 pub const enemy_ai = @import("enemy_ai.zig");
 pub const scorer = @import("scorer.zig");
 
-pub const score_type = f32;
+pub const score_t = f32;
 
 // Maximum number of levels to build tree to
-const MAX_TURNLEVEL: u16 = 50;
+const MAX_TURNLEVEL: u16 = 20;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 1;
+const LOOKAHEAD: u4 = 2;
 
 // Maximum number of nodes to optimize for at a given level
-const K_LARGEST: u16 = 2;
+const K_LARGEST: u16 = 1;
 
 // Minimum node score required for further extension
-const MIN_SCORE: score_type = 2e-2;
+pub const MIN_SCORE: score_t = -5e3;
 
 // Binary mask for which of the 16 rolls to generate (always keep min/max roll)
 const ROLL_INTERVALS: u16 = 0b1000000000000000;
@@ -35,15 +35,16 @@ pub const DecisionNode = struct {
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     team: [6]i8 = [_]i8{0} ** 6,
     result: pkmn.Result,
-    score: score_type = MIN_SCORE + 1, // Ensures nodes by default pass exhaustion
+    score: score_t = MIN_SCORE + 1, // Ensures nodes by default pass exhaustion
+    probability: score_t = 1,
     previous_node: ?*DecisionNode = null,
     transitions: std.ArrayList(Transition) = undefined,
 };
 pub const Transition = struct {
+    next_node: *DecisionNode,
     choices: [2]pkmn.Choice,
     actions: pkmn.gen1.chance.Actions,
     durations: pkmn.gen1.chance.Durations,
-    next_node: *DecisionNode,
     box_switch: ?BoxSwitch,
 };
 pub const BoxSwitch = struct {
@@ -55,7 +56,7 @@ pub const Update = struct {
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     actions: pkmn.gen1.chance.Actions,
     durations: pkmn.gen1.chance.Durations,
-    probability: score_type,
+    probability: score_t,
     result: pkmn.Result,
 };
 
@@ -172,24 +173,24 @@ pub fn exhaustive_decision_tree(
                             .battle = new_update.battle,
                             .team = curr_node.team,
                             .result = new_update.result,
+                            .score = try scorer.score_node(child_node, new_update.probability),
+                            .probability = new_update.probability,
                             .previous_node = curr_node,
                             .transitions = std.ArrayList(Transition).init(alloc),
                         };
-                        child_node.score = try scorer.score_node(child_node, new_update.probability);
                         try curr_node.transitions.append(.{
+                            .next_node = child_node,
                             .choices = .{ player_choice, enemy_choice },
                             .actions = new_update.actions,
                             .durations = new_update.durations,
-                            .next_node = child_node,
                             .box_switch = null,
                         });
-                        count += 1;
                         count += try exhaustive_decision_tree(
                             child_node,
                             box,
                             level + 1,
                             alloc,
-                        );
+                        ) + 1;
                     }
 
                     alloc.free(new_updates);
@@ -228,24 +229,24 @@ pub fn exhaustive_decision_tree(
                                         .battle = new_update.battle,
                                         .team = curr_node.team,
                                         .result = new_update.result,
+                                        .score = try scorer.score_node(child_node, new_update.probability),
+                                        .probability = new_update.probability,
                                         .previous_node = curr_node,
                                         .transitions = std.ArrayList(Transition).init(alloc),
                                     };
-                                    child_node.score = try scorer.score_node(child_node, new_update.probability);
                                     try curr_node.transitions.append(.{
+                                        .next_node = child_node,
                                         .choices = .{ switch_choice, enemy_choice },
                                         .actions = new_update.actions,
                                         .durations = new_update.durations,
-                                        .next_node = child_node,
                                         .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot, .box_id = box_index },
                                     });
-                                    count += 1;
                                     count += try exhaustive_decision_tree(
                                         child_node,
                                         box,
                                         level + 1,
                                         alloc,
-                                    );
+                                    ) + 1;
                                 }
 
                                 alloc.free(new_updates);
@@ -289,9 +290,8 @@ pub fn transitions(
     const p1 = b.side(.P1);
     const p2 = b.side(.P2);
 
-    try frontier.append(opts.chance.actions);
-
     var p: pkmn.Rational(u256) = .{ .p = 0, .q = 1 };
+    try frontier.append(opts.chance.actions);
 
     // Hash actions to remove duplicates
     var actions_map = std.AutoHashMap(pkmn.gen1.chance.Actions, u1).init(alloc);
@@ -375,20 +375,22 @@ pub fn transitions(
                 opts.calc.overrides = a;
                 opts.calc.summaries = .{};
                 opts.chance = .{ .probability = .{}, .durations = durations };
-                const summaries = &opts.calc.summaries;
+                const q = &opts.chance.probability;
 
                 b = battle;
                 const result = try b.update(c1, c2, &opts);
+                const summaries = &opts.calc.summaries;
 
                 if (try actions_map.fetchPut(a, 1)) |old| {
                     _ = old;
                 } else {
+                    const prob = @as(score_t, @floatFromInt(q.p)) / @as(score_t, @floatFromInt(q.q,));
+                    // print("{d} {} {}\n", .{prob, a, opts.chance.pending});
                     try updates.append(.{
                         .battle = b,
                         .actions = a,
                         .durations = opts.chance.durations,
-                        .probability = @as(score_type, @floatFromInt(opts.chance.probability.p)) / 
-                                       @as(score_type, @floatFromInt(opts.chance.probability.q,)),
+                        .probability = prob,
                         .result = result,
                     });
                 }

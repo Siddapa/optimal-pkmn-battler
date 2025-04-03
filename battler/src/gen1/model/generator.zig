@@ -56,11 +56,11 @@ fn generate_battles(data_file: std.fs.File, seed: u64, sample_size: u16, alloc: 
         const chosen_battle = transition.next_node.battle;
 
         try tools.side_details(init_battle.side(.P1), tools.DetailOptions.no_moves(), stdout);
-        try tools.move_details(init_battle.side(.P1).active, transition.choices[0], stdout);
+        try tools.move_details(&init_battle.side(.P1).active, transition.choices[0], stdout);
         try stdout.writeAll("\n");
 
         try tools.side_details(init_battle.side(.P2), tools.DetailOptions.no_moves(), stdout);
-        try tools.move_details(init_battle.side(.P2).active, transition.choices[1], stdout);
+        try tools.move_details(&init_battle.side(.P2).active, transition.choices[1], stdout);
         try stdout.writeAll("\n\n");
 
         try stdout.print("{}\n", .{transition.actions});
@@ -130,8 +130,8 @@ fn read_battles(dir: std.fs.Dir, data_fn: []const u8) !void {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const alloc = gpa.allocator();
+    var da: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    const alloc = da.allocator();
 
     const args = std.os.argv;
     assert(args.len == 2);

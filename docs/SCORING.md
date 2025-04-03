@@ -1,8 +1,7 @@
-# Preface
-Finding the most optimal route down a tree isn't a trivial task given the metrics for scoring and what is actually being scored make a large impact not only in finding that optimal route but also in efficiently growing the tree. So far, the below approaches are the ones on my mind:
-1. Scoring transitions where a move (plus the actions that follow it) are weighted in the context of that node's battle scenario
-2. Scoring leaf nodes of exhaustive extensions where the node represents the culmination of the transitions above it
+# Goal
+The final optimized decision tree should be a branching tree that shows the most optimal line with minmal risks. However, there should ideally be lines that branch off the optimal line that account for a some amount of variation. Therefore, 2 metrics are required to generate such a tree:
+1. What makes a line optimal/minimally risky?
+2. What threshold must non-optimal lines qualify for in order to be worthy of consideration?
 
-
-# Approach 1
-The idea behind scoring transitions is that they are far easier calculations to make and don't require exhaustion of a sub-tree to start pruning. If a transition receives below a score below a certain threshold, we discard its children and continue. The problem is that this doesn't account for multi-turn actions unless I can preemptively 
+# Optimal Lines
+Starting with the easiest aspect, minimizing risk is quite easy since risk is just the cluminated probability of any side effects occuring during a `Choice` (rolls, crits, secondary effects, etc.). These events are more unlikely than the base event of min rolling on moves (switches are guaranteed, barring no field conditions) which is why we don't want to rely on them being optimal. 
