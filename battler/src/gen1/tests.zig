@@ -19,7 +19,7 @@ var options = pkmn.battle.options(
 );
 
 pub fn main() !void {
-    // try optimalWASM();
+    try optimalWASM();
     try optimal1();
     // try exhaust();
     // try exhaust1();
@@ -315,7 +315,7 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box: std.ArrayList(pkmn
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    _ = try builder.exhaustive_decision_tree(root, &edit_box, 0, alloc);
+    try builder.exhaustive_decision_tree(root, &edit_box, 0, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
@@ -388,7 +388,8 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, &box, alloc);
+    const imm_box: []const pkmn.gen1.Pokemon = box.items;
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, imm_box, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 

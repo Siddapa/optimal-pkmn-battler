@@ -13,7 +13,7 @@ pub const score_t = f32;
 const MAX_TURNLEVEL: u16 = 20;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 2;
+const LOOKAHEAD: u4 = 1;
 
 // Maximum number of nodes to optimize for at a given level
 const K_LARGEST: u16 = 1;
@@ -63,7 +63,7 @@ pub const Update = struct {
 pub fn optimal_decision_tree(
     starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     starting_result: pkmn.Result,
-    box: *std.ArrayList(pkmn.gen1.Pokemon),
+    box: []const pkmn.gen1.Pokemon,
     alloc: std.mem.Allocator,
 ) !*DecisionNode {
     const root: *DecisionNode = try alloc.create(DecisionNode);
@@ -86,21 +86,21 @@ pub fn optimal_decision_tree(
         var scored_nodes = std.ArrayList(*DecisionNode).init(alloc);
         defer scored_nodes.deinit();
 
+        var pool: std.Thread.Pool = undefined;
+        var wg = std.Thread.WaitGroup{};
+        try pool.init(std.Thread.Pool.Options{ .allocator = alloc, .n_jobs = 20 });
+        defer pool.deinit();
+
         // Extend leaves of scoring_nodes to maximize level for scoring
         for (scoring_nodes.items) |scoring_node| {
             if (scoring_node.result.type == .None) {
-                const count = try exhaustive_decision_tree(scoring_node, box, 0, alloc);
-                print("Exhaust Count: {}\r", .{count});
-
-                // if (scoring_node.previous_node) |previous_node| {
-                //     const tc, _ = try get_parent_transition(previous_node, scoring_node);
-                //     scoring_node.score = score(scoring_node, tc);
-                // }
+                // Use .spawnWgId to track each thread doing a job
+                pool.spawnWg(&wg, exhaustive_decision_tree, .{ scoring_node, box, 0, alloc });
             }
 
             try scored_nodes.append(scoring_node);
         }
-        print("\n", .{});
+        pool.waitAndWork(&wg);
 
         // Keep only the K_LARGEST nodes
         std.mem.sort(*DecisionNode, scored_nodes.items, {}, compare_score);
@@ -139,17 +139,16 @@ pub fn optimal_decision_tree(
 
 pub fn exhaustive_decision_tree(
     curr_node: *DecisionNode,
-    box: *std.ArrayList(pkmn.gen1.Pokemon),
+    box: []const pkmn.gen1.Pokemon,
     level: u16,
     alloc: std.mem.Allocator,
-) !u64 {
-    var count: u64 = 0;
+) void {
     if (level < LOOKAHEAD and curr_node.score >= MIN_SCORE) {
         if (curr_node.transitions.items.len == 0) {
             // Select durations from transition of curr_node's parent to itself
             var durations = pkmn.gen1.chance.Durations{};
             if (curr_node.previous_node) |parent| {
-                const tc, _ = try get_parent_transition(parent, curr_node);
+                const tc, _ = get_parent_transition(parent, curr_node) catch unreachable;
                 durations = tc.durations;
             }
 
@@ -166,31 +165,31 @@ pub fn exhaustive_decision_tree(
 
             for (enemy_valid_choices) |enemy_choice| {
                 for (player_valid_choices) |player_choice| {
-                    const new_updates = try transitions(curr_node.battle, player_choice, enemy_choice, durations, alloc);
+                    const new_updates = transitions(curr_node.battle, player_choice, enemy_choice, durations, alloc) catch unreachable;
                     for (new_updates) |new_update| {
-                        const child_node: *DecisionNode = try alloc.create(DecisionNode);
+                        const child_node: *DecisionNode = alloc.create(DecisionNode) catch unreachable;
                         child_node.* = .{
                             .battle = new_update.battle,
                             .team = curr_node.team,
                             .result = new_update.result,
-                            .score = try scorer.score_node(child_node, new_update.probability),
+                            .score = scorer.score_node(child_node, new_update.probability) catch unreachable,
                             .probability = new_update.probability,
                             .previous_node = curr_node,
                             .transitions = std.ArrayList(Transition).init(alloc),
                         };
-                        try curr_node.transitions.append(.{
+                        curr_node.transitions.append(.{
                             .next_node = child_node,
                             .choices = .{ player_choice, enemy_choice },
                             .actions = new_update.actions,
                             .durations = new_update.durations,
                             .box_switch = null,
-                        });
-                        count += try exhaustive_decision_tree(
+                        }) catch unreachable;
+                        exhaustive_decision_tree(
                             child_node,
                             box,
                             level + 1,
                             alloc,
-                        ) + 1;
+                        );
                     }
 
                     alloc.free(new_updates);
@@ -209,7 +208,7 @@ pub fn exhaustive_decision_tree(
                     }
                     // Still being zero means no new slot
                     if (0 < new_member_slot) {
-                        for (box.items, 0..) |box_mon, box_index| {
+                        for (box, 0..) |box_mon, box_index| {
                             var in_box: bool = false;
                             for (curr_node.team) |team_index| { // Is box_mon already on team?
                                 if (box_index == team_index) {
@@ -222,31 +221,31 @@ pub fn exhaustive_decision_tree(
                                 new_team = curr_node.team;
                                 new_team[new_member_slot] = @intCast(box_index);
 
-                                const new_updates = try transitions(next_battle, switch_choice, enemy_choice, durations, alloc);
+                                const new_updates = transitions(next_battle, switch_choice, enemy_choice, durations, alloc) catch unreachable;
                                 for (new_updates) |new_update| {
-                                    const child_node: *DecisionNode = try alloc.create(DecisionNode);
+                                    const child_node: *DecisionNode = alloc.create(DecisionNode) catch unreachable;
                                     child_node.* = .{
                                         .battle = new_update.battle,
                                         .team = curr_node.team,
                                         .result = new_update.result,
-                                        .score = try scorer.score_node(child_node, new_update.probability),
+                                        .score = scorer.score_node(child_node, new_update.probability) catch unreachable,
                                         .probability = new_update.probability,
                                         .previous_node = curr_node,
                                         .transitions = std.ArrayList(Transition).init(alloc),
                                     };
-                                    try curr_node.transitions.append(.{
+                                    curr_node.transitions.append(.{
                                         .next_node = child_node,
                                         .choices = .{ switch_choice, enemy_choice },
                                         .actions = new_update.actions,
                                         .durations = new_update.durations,
                                         .box_switch = .{ .added_pokemon = box_mon, .order_slot = new_member_slot, .box_id = box_index },
-                                    });
-                                    count += try exhaustive_decision_tree(
+                                    }) catch unreachable;
+                                    exhaustive_decision_tree(
                                         child_node,
                                         box,
                                         level + 1,
                                         alloc,
-                                    ) + 1;
+                                    );
                                 }
 
                                 alloc.free(new_updates);
@@ -257,11 +256,10 @@ pub fn exhaustive_decision_tree(
             }
         } else {
             for (curr_node.transitions.items) |transition| {
-                count += try exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
+                exhaustive_decision_tree(transition.next_node, box, level + 1, alloc);
             }
         }
     }
-    return count;
 }
 
 pub fn transitions(

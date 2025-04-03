@@ -76,6 +76,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
             box.append(pkmn.gen1.helpers.Pokemon.init(new_pokemon)) catch continue;
         }
     }
+    const imm_box: []const pkmn.gen1.Pokemon = box.items;
 
     for (enemy_imports.items) |enemy_import| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_prep_alloc);
@@ -126,7 +127,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
     // tree.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
     // return root;
 
-    if (tree.optimal_decision_tree(battle, result, &box, tree_gen_alloc)) |decision_tree| {
+    if (tree.optimal_decision_tree(battle, result, &imm_box, tree_gen_alloc)) |decision_tree| {
         decision_tree_instance = decision_tree;
         return decision_tree_instance;
     } else |err| {
