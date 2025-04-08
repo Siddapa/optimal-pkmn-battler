@@ -19,11 +19,14 @@ var options = pkmn.battle.options(
 );
 
 pub fn main() !void {
-    try optimalWASM();
-    try optimal1();
+    // try base_transitions();
+    // try box_switch_transitions();
+    // try optimalWASM();
+    // try optimal1();
     // try exhaust();
     // try exhaust1();
     // try exhaust2();
+    try box_switch_exhaust();
 }
 
 fn base_transitions() !void {
@@ -61,7 +64,7 @@ fn enemy_switch_transitions() !void {
     const player_max = battle.choices(.P1, result.p1, &player_choices);
     const player_valid_choices = player_choices[0..player_max];
 
-    const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices);
+    const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices, alloc);
     const enemy_valid_choices = enemy_choices[0..enemy_max];
 
     // Moves are harcoded so changing initial conditions could break test
@@ -152,6 +155,23 @@ fn exhaust2() !void {
     try stdout.print("Exhaust2: {d} ms\n\n", .{runtime});
 }
 
+fn box_switch_exhaust() !void {
+    var battle = builder.tools.init_battle(&.{
+        .{ .species = .Bulbasaur, .moves = &.{.Tackle} },
+    }, &.{
+        .{ .species = .Charizard, .moves = &.{.Flamethrower} },
+    });
+    battle.side(.P1).stored().hp = 0;
+
+    const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
+        .{ .species = .Kingler, .moves = &.{.WaterGun} },
+    };
+
+    const runtime = try run_exhaust(battle, &box_pokemon);
+
+    try stdout.print("BoxSwitchExhaust: {d} ms\n", .{runtime});
+}
+
 fn optimalWASM() !void {
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
@@ -217,7 +237,7 @@ fn random() !void {
         const n1 = rand.uintLessThan(u8, max1);
         c1 = player_choices[n1];
 
-        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices));
+        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices, alloc));
         const n2 = rand.uintLessThan(u8, max2);
         c2 = enemy_choices[n2];
 
@@ -237,20 +257,20 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     const player_max = battle.choices(.P1, result.p1, &player_choices);
     const player_valid_choices = player_choices[0..player_max];
 
-    const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices);
+    const enemy_max = enemy_ai.pick_choice(battle, result, 0, &enemy_choices, alloc);
     const enemy_valid_choices = enemy_choices[0..enemy_max];
 
     var total_updates: usize = 0;
     for (player_valid_choices) |player_choice| {
         for (enemy_valid_choices) |enemy_choice| {
-            const updates: []builder.Update = try builder.transitions(
+            const updates = try builder.transitions(
                 battle,
                 player_choice,
                 enemy_choice,
                 options.chance.durations,
                 alloc,
             );
-            defer std.testing.allocator.free(updates);
+            defer alloc.free(updates);
             total_updates += updates.len;
 
             for (updates) |update| {
@@ -258,11 +278,11 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
                 try stdout.writeAll("\n");
 
                 try builder.tools.side_details(battle.side(.P1), builder.tools.DetailOptions.no_moves(), stdout);
-                if (player_choice.type == .Move) try builder.tools.move_details(battle.side(.P1).active, player_choice, stdout);
+                if (player_choice.type == .Move) try builder.tools.move_details(&battle.side(.P1).active, player_choice, stdout);
                 try stdout.writeAll("\n");
 
                 try builder.tools.side_details(battle.side(.P2), builder.tools.DetailOptions.no_moves(), stdout);
-                if (enemy_choice.type == .Move) try builder.tools.move_details(battle.side(.P2).active, enemy_choice, stdout);
+                if (enemy_choice.type == .Move) try builder.tools.move_details(&battle.side(.P2).active, enemy_choice, stdout);
                 try stdout.writeAll("\n");
 
                 try builder.tools.battle_details(update.battle, builder.tools.DetailOptions.no_moves(), stdout);
@@ -299,65 +319,33 @@ fn random_battle(seed: u64) !struct {
     return .{ .battle = battle, .box = box };
 }
 
-fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box: std.ArrayList(pkmn.gen1.Pokemon)) !u128 {
+fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u128 {
     var b = battle;
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
-    var edit_box = box;
+
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.smp_allocator);
+    defer box.deinit();
+    for (box_pokemon) |mon| {
+        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
+    }
 
     const root: *builder.DecisionNode = try alloc.create(builder.DecisionNode);
     root.* = .{
+        .prev_node = null,
         .battle = b,
-        .team = .{ 0, -1, -1, -1, -1, -1 },
+        .team = .{ .Lead, .Empty, .Empty, .Empty, .Empty, .Empty },
         .result = result,
-        .previous_node = null,
-        .transitions = std.ArrayList(builder.Transition).init(alloc),
+        .transitions = std.ArrayList(*builder.DecisionNode).init(alloc),
     };
+    defer builder.free_tree(root, alloc);
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    try builder.exhaustive_decision_tree(root, &edit_box, 0, alloc);
+    builder.exhaustive_decision_tree(root, box.items, 0, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    try tools.battle_details(b, tools.DetailOptions.all(), stdout);
-    try stdout.writeAll("\n");
-
-    try stdout.writeAll("Score Sorted\n");
-    std.mem.sort(builder.Transition, root.transitions.items, {}, compare_score);
-    for (root.transitions.items) |transition| {
-        try tools.display_choice(root, transition, 0, stdout);
-        try tools.hp_details(transition.next_node.battle.side(.P1).stored(), stdout);
-        try stdout.writeAll(" | ");
-
-        try tools.display_choice(root, transition, 1, stdout);
-        try tools.hp_details(transition.next_node.battle.side(.P2).stored(), stdout);
-        try stdout.writeAll(" | ");
-
-        try stdout.print("{d:10.2} {d:.8} {s: <100} {s: <100}\n", .{
-            transition.next_node.score,
-            transition.next_node.probability,
-            transition.actions.p1,
-            transition.actions.p2,
-        });
-
-        try stdout.writeAll("----------------------------------------------------------------------------------------\n");
-    }
-
-    // try stdout.writeAll("\nProbability Sorted\n");
-
-    // std.mem.sort(builder.Transition, root.transitions.items, {}, compare_prob);
-    // for (root.transitions.items) |transition| {
-    //     try tools.display_choice(root, transition, 0, stdout);
-    //     try tools.display_choice(root, transition, 1, stdout);
-    //     try stdout.print("{d:10.2} {d:.8} {s:100} {s:100}\n", .{
-    //         transition.next_node.score,
-    //         transition.next_node.probability,
-    //         transition.actions.p1,
-    //         transition.actions.p2,
-    //     });
-    // }
-
-    builder.free_tree(root, alloc);
+    try tools.traverse_decision_tree(root, stdout);
 
     return end_time - start_time;
 }
@@ -377,7 +365,7 @@ fn compare_prob(_: void, t1: builder.Transition, t2: builder.Transition) bool {
 }
 
 fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u64 {
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.smp_allocator);
     defer box.deinit();
     for (box_pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
@@ -388,8 +376,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    const imm_box: []const pkmn.gen1.Pokemon = box.items;
-    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, imm_box, alloc);
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, std.heap.smp_allocator, false);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 

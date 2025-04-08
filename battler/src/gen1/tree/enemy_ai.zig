@@ -1,11 +1,11 @@
 const std = @import("std");
 const assert = std.debug.assert;
-var da: std.heap.GeneralPurposeAllocator(.{}) = .init;
 
 const pkmn = @import("pkmn");
 const Move = pkmn.gen1.Move;
 const effects = Move.Effect;
 
+const builder = @import("builder.zig");
 const tools = @import("tools.zig");
 
 const ChoiceData = struct {
@@ -17,19 +17,22 @@ const ChoiceData = struct {
 /// Provides categories for move selection
 /// @arg(good_ai) should be enabled when facing certain trainers
 /// TODO Track number of turns on field in main loop
-pub fn pick_choice(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result, turns_on_field: u8, out: []pkmn.Choice) usize {
-    const alloc = da.allocator();
+pub fn pick_choice(curr_node: *builder.DecisionNode, turns_on_field: u8, out: []pkmn.Choice, alloc: std.mem.Allocator) usize {
     var choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-    const player_side = battle.side(.P1);
-    const enemy_side = battle.side(.P2);
+    const player_side = curr_node.battle.side(.P1);
+    const enemy_side = curr_node.battle.side(.P2);
+    const result = curr_node.result;
 
-    const max_choice = battle.choices(.P2, result.p2, &choices);
+    const max_choice = curr_node.battle.choices(.P2, result.p2, &choices);
     const valid_choices = choices[0..max_choice];
     assert(valid_choices.len > 0);
 
     // When no switches available and pokemon is restricted from moving
     if (valid_choices[0].type == pkmn.Choice.Type.Move and valid_choices[0].data == 0) {
         out[0] = valid_choices[0];
+        return 1;
+    } else if (result.type == .Lose and builder.find_empty_slot(&curr_node.team) != null) {
+        out[0] = pkmn.Choice{ .type = .Pass };
         return 1;
     }
 

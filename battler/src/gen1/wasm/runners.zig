@@ -76,7 +76,6 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
             box.append(pkmn.gen1.helpers.Pokemon.init(new_pokemon)) catch continue;
         }
     }
-    const imm_box: []const pkmn.gen1.Pokemon = box.items;
 
     for (enemy_imports.items) |enemy_import| {
         var move_enums = std.ArrayList(pkmn.gen1.Move).init(tree_prep_alloc);
@@ -127,7 +126,8 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
     // tree.exhaustive_decision_tree(root, 1, tree_gen_alloc) catch return null;
     // return root;
 
-    if (tree.optimal_decision_tree(battle, result, &imm_box, tree_gen_alloc)) |decision_tree| {
+    const imm_box: []const pkmn.gen1.Pokemon = box.items;
+    if (tree.optimal_decision_tree(battle, result, imm_box, tree_gen_alloc)) |decision_tree| {
         decision_tree_instance = decision_tree;
         return decision_tree_instance;
     } else |err| {
@@ -137,7 +137,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
 }
 
 export fn getNextNode(curr_node: *tree.DecisionNode, index: usize) *tree.DecisionNode {
-    return curr_node.transitions.items[index].next_node;
+    return curr_node.transitions.items[index];
 }
 
 export fn getNumOfNextTurns(curr_node: *tree.DecisionNode) usize {
@@ -159,45 +159,46 @@ export fn getTeam(curr_node: *tree.DecisionNode, out: [*]i8) u8 {
     return 6;
 }
 
-export fn getTransitionChoice(curr_node: *tree.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
-    const turn_choice: tree.Transition = curr_node.transitions.items[index];
-    const choice: pkmn.Choice = turn_choice.choices[if (player) 0 else 1];
-    const side: pkmn.Player = if (player) .P1 else .P2;
-    var details: []const u8 = undefined;
-
-    if (player) {
-        if (choice.type == pkmn.Choice.Type.Move) {
-            if (choice.data == 0) {
-                details = std.fmt.allocPrint(tree_prep_alloc, "Stalled", .{}) catch "";
-            } else {
-                details = std.fmt.allocPrint(tree_prep_alloc, "P_Move: {s}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
-            }
-        } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
-            if (turn_choice.box_switch) |box_switch| {
-                details = std.fmt.allocPrint(tree_prep_alloc, "P_BoxSwitch: {s}", .{@tagName(box_switch.added_pokemon.species)}) catch "";
-            } else {
-                details = std.fmt.allocPrint(tree_prep_alloc, "P_Switch: {s}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)}) catch "";
-            }
-        } else {
-            details = std.fmt.allocPrint(tree_prep_alloc, "Pass", .{}) catch "";
-        }
-    } else {
-        if (choice.type == pkmn.Choice.Type.Move) {
-            if (choice.data == 0) {
-                details = std.fmt.allocPrint(tree_prep_alloc, "Stalled", .{}) catch "";
-            } else {
-                details = std.fmt.allocPrint(tree_prep_alloc, "E_Move: {s}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
-            }
-        } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
-            details = std.fmt.allocPrint(tree_prep_alloc, "E_Switch: {s}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)}) catch "";
-        } else {
-            details = std.fmt.allocPrint(tree_prep_alloc, "Pass", .{}) catch "";
-        }
-    }
-
-    @memcpy(out, details);
-    return details.len;
-}
+// TODO Refactor for no TurnChoices
+// export fn getTransitionChoice(curr_node: *tree.DecisionNode, index: usize, player: bool, out: [*]u8) usize {
+//     const turn_choice: tree.Transition = curr_node.transitions.items[index];
+//     const choice: pkmn.Choice = turn_choice.choices[if (player) 0 else 1];
+//     const side: pkmn.Player = if (player) .P1 else .P2;
+//     var details: []const u8 = undefined;
+//
+//     if (player) {
+//         if (choice.type == pkmn.Choice.Type.Move) {
+//             if (choice.data == 0) {
+//                 details = std.fmt.allocPrint(tree_prep_alloc, "Stalled", .{}) catch "";
+//             } else {
+//                 details = std.fmt.allocPrint(tree_prep_alloc, "P_Move: {s}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
+//             }
+//         } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
+//             if (turn_choice.box_switch) |box_switch| {
+//                 details = std.fmt.allocPrint(tree_prep_alloc, "P_BoxSwitch: {s}", .{@tagName(box_switch.added_pokemon.species)}) catch "";
+//             } else {
+//                 details = std.fmt.allocPrint(tree_prep_alloc, "P_Switch: {s}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)}) catch "";
+//             }
+//         } else {
+//             details = std.fmt.allocPrint(tree_prep_alloc, "Pass", .{}) catch "";
+//         }
+//     } else {
+//         if (choice.type == pkmn.Choice.Type.Move) {
+//             if (choice.data == 0) {
+//                 details = std.fmt.allocPrint(tree_prep_alloc, "Stalled", .{}) catch "";
+//             } else {
+//                 details = std.fmt.allocPrint(tree_prep_alloc, "E_Move: {s}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)}) catch "";
+//             }
+//         } else if (choice.type == pkmn.Choice.Type.Switch and choice.data != 42) {
+//             details = std.fmt.allocPrint(tree_prep_alloc, "E_Switch: {s}", .{@tagName(curr_node.battle.side(side).get(choice.data).species)}) catch "";
+//         } else {
+//             details = std.fmt.allocPrint(tree_prep_alloc, "Pass", .{}) catch "";
+//         }
+//     }
+//
+//     @memcpy(out, details);
+//     return details.len;
+// }
 
 export fn getSpecies(curr_node: *tree.DecisionNode, player: bool, out: [*]u8) usize {
     const side: pkmn.Player = if (player) .P1 else .P2;

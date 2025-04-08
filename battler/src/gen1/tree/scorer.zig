@@ -9,8 +9,8 @@ pub const NTN = struct {};
 
 pub const Side = struct {};
 
-pub fn score_node(scoring_node: *builder.DecisionNode, probability: builder.score_t) !score_t {
-    const battle = &scoring_node.battle;
+pub fn score_node(scoring_node: *const builder.DecisionNode, probability: builder.score_t) !score_t {
+    const battle = scoring_node.battle;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);
 
@@ -49,7 +49,7 @@ pub fn score_node(scoring_node: *builder.DecisionNode, probability: builder.scor
     return score;
 }
 
-fn dead(side: *pkmn.gen1.Side) score_t {
+fn dead(side: *const pkmn.gen1.Side) score_t {
     var count: score_t = 0;
     for (side.pokemon) |mon| {
         if (mon.hp == 0) {
@@ -59,7 +59,7 @@ fn dead(side: *pkmn.gen1.Side) score_t {
     return count;
 }
 
-fn damage_per_turn(side: *pkmn.gen1.Side, turn: u16, player: bool) score_t {
+fn damage_per_turn(side: *const pkmn.gen1.Side, turn: u16, player: bool) score_t {
     var total_damage: score_t = 0;
     for (side.pokemon) |mon| {
         total_damage += @as(score_t, @floatFromInt(mon.stats.hp - mon.hp));
@@ -73,7 +73,7 @@ fn damage_per_turn(side: *pkmn.gen1.Side, turn: u16, player: bool) score_t {
 }
 
 // TODO Account for pre-statusing strategies
-fn status(side: *pkmn.gen1.Side) score_t {
+fn status(side: *const pkmn.gen1.Side) score_t {
     const active = side.active;
     const stored = side.stored();
     const sleep_score = 500;
@@ -97,7 +97,7 @@ fn status(side: *pkmn.gen1.Side) score_t {
     return 0;
 }
 
-fn volatiles(side: *pkmn.gen1.Side) score_t {
+fn volatiles(side: *const pkmn.gen1.Side) score_t {
     const active = side.active;
     // const stored = side.stored();
 
