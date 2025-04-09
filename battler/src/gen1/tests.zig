@@ -21,12 +21,12 @@ var options = pkmn.battle.options(
 pub fn main() !void {
     // try base_transitions();
     // try box_switch_transitions();
-    // try optimalWASM();
+    try optimalWASM();
     // try optimal1();
     // try exhaust();
     // try exhaust1();
     // try exhaust2();
-    try box_switch_exhaust();
+    // try box_switch_exhaust();
 }
 
 fn base_transitions() !void {
@@ -365,7 +365,8 @@ fn compare_prob(_: void, t1: builder.Transition, t2: builder.Transition) bool {
 }
 
 fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u64 {
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.smp_allocator);
+    const optimal_alloc = std.heap.smp_allocator;
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(optimal_alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
@@ -376,7 +377,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, std.heap.smp_allocator, false);
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, optimal_alloc, true);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
@@ -385,7 +386,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     const num_of_nodes = builder.count_nodes(root);
     try stdout.print("Num Of Nodes: {}\n", .{num_of_nodes});
 
-    builder.free_tree(root, alloc);
+    builder.free_tree(root, optimal_alloc);
 
     return end_time - start_time;
 }

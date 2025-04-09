@@ -94,13 +94,12 @@ pub fn optimal_decision_tree(
         if (threaded) {
             var pool: std.Thread.Pool = undefined;
             var wg = std.Thread.WaitGroup{};
-            try pool.init(std.Thread.Pool.Options{ .allocator = alloc, .n_jobs = 20 });
+            try pool.init(std.Thread.Pool.Options{ .allocator = alloc, .n_jobs = 5 });
             defer pool.deinit();
 
             // Extend leaves of scoring_nodes to maximize level for scoring
             for (scoring_nodes.items) |scoring_node| {
                 if (scoring_node.result.type == .None) {
-                    // Use .spawnWgId to track each thread doing a job
                     pool.spawnWg(&wg, exhaustive_decision_tree, .{ scoring_node, box, 0, alloc });
                 }
 
@@ -211,7 +210,7 @@ pub fn exhaustive_decision_tree(
                 assert(player_max > 0);
                 // TODO Proper validation of whether box switch is legal (Block, etc.)
                 // TODO .Pass used for death switches which box switches should be valid for
-                if (player_valid_choices[0].type != .Pass or true) { // Can't force box switch when not able to select a switch
+                if (player_valid_choices[0].type != .Pass) { // Can't force box switch when not able to select a switch
                     if (find_empty_slot(&curr_node.team)) |new_member_slot| {
                         for (box, 0..) |box_mon, box_index| {
                             var in_box: bool = false;
@@ -221,13 +220,12 @@ pub fn exhaustive_decision_tree(
                                     else => continue,
                                 }
                             }
+                            // Only box_switch if box_mon isn't already on the team
                             if (!in_box) {
-                                // Only box_switch if box_mon isn't already on the team
                                 var next_battle = curr_node.battle;
                                 const switch_choice: pkmn.Choice = add_to_team(&next_battle, box_mon, new_member_slot);
                                 var new_team = curr_node.team;
                                 new_team[new_member_slot] = TeamSlotState{ .Filled = @intCast(box_index) };
-                                // print("{}, ", .{new_member_slot});
 
                                 const new_updates = transitions(next_battle, switch_choice, enemy_choice, curr_node.chance.durations, alloc) catch unreachable;
                                 for (new_updates) |new_update| {
@@ -351,15 +349,9 @@ pub fn transitions(
         for (Rolls.criticalHit(f.p1, p1_hit)) |p1_crit| { a.p1.critical_hit = p1_crit;
         for (Rolls.criticalHit(f.p2, p2_hit)) |p2_crit| { a.p2.critical_hit = p2_crit;
 
-        // if ((p1_hit == .false and p1_crit != .false)) continue;
-
         var player_mask: u16 = 0b1000000000000000;
         var enemy_mask: u16 = 0b1000000000000000;
         var p1_dmg = Rolls.damage(f.p1, p1_hit);
-
-        // print("P1 Hit: {s}\n", .{@tagName(p1_hit)});
-        // print("P1 Min: {}, P1 Max: {}\n", .{p1_dmg.min, p1_dmg.max});
-        // print("P1 Crit: {s}\n", .{@tagName(p1_crit)});
 
         if (p1_hit == .true and p1_dmg.min == 0) continue;
 
@@ -370,10 +362,6 @@ pub fn transitions(
             
             var p2_dmg = Rolls.damage(f.p2, p2_hit);
             const p2_min: u9 = p2_dmg.min;
-
-            // print("P2 Hit: {s}\n", .{@tagName(p2_hit)});
-            // print("P2 Min: {}, P2 Max: {}\n", .{p2_dmg.min, p2_dmg.max});
-            // print("P2 Crit: {s}\n", .{@tagName(p2_crit)});
 
             if (p2_hit == .true and p2_dmg.min == 0) continue;
 
@@ -395,7 +383,6 @@ pub fn transitions(
                     _ = old;
                 } else {
                     const prob = @as(score_t, @floatFromInt(q.p)) / @as(score_t, @floatFromInt(q.q,));
-                    // print("{d} {} {}\n", .{prob, a, opts.chance.pending});
                     try updates.append(.{
                         .battle = b,
                         .actions = a,
@@ -497,6 +484,5 @@ pub fn free_tree(curr_node: *DecisionNode, alloc: std.mem.Allocator) void {
         free_tree(next_node, alloc);
     }
     curr_node.transitions.deinit();
-    // tools.battle_details(curr_node.battle, tools.DetailOptions.all(), std.io.getStdOut().writer()) catch unreachable;
     alloc.destroy(curr_node);
 }

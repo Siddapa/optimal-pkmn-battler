@@ -22,6 +22,10 @@ pub const DetailOptions = struct {
         return .{ .hp = true, .typing = true, .stats = true, .boosts = true, .status = true, .volatiles = true, .moves = true };
     }
 
+    pub fn only_hp() DetailOptions {
+        return .{ .hp = true };
+    }
+
     pub fn no_moves() DetailOptions {
         return .{ .hp = true, .typing = true, .stats = true, .boosts = true, .status = true, .volatiles = true, .moves = false };
     }
@@ -177,21 +181,21 @@ pub fn move_details(mon: *const pkmn.gen1.ActivePokemon, choice: pkmn.Choice, wr
     });
 }
 
-pub fn display_choice(curr_node: *builder.DecisionNode, comptime player: usize, writer: anytype) !void {
-    const choice = curr_node.choices[player];
+pub fn display_choice(next_node: *builder.DecisionNode, comptime player: usize, writer: anytype) !void {
+    const choice = next_node.choices[player];
     // try writer.print("fsdofjiosdf: {}\n", .{choice.data});
     // try writer.print("jfois: {}\n", .{choice.type});
     const side = if (player == 0) .P1 else .P2;
     switch (choice.type) {
         .Move => {
-            if (choice.data != 0) try writer.print("{s: <16}", .{@tagName(curr_node.battle.side(side).stored().move(choice.data).id)});
+            if (choice.data != 0) try writer.print("{s: <16}", .{@tagName(next_node.battle.side(side).stored().move(choice.data).id)});
         },
         .Switch => {
             if (choice.data != 42) {
-                if (curr_node.box_switch) |box_switch| {
+                if (next_node.box_switch) |box_switch| {
                     try writer.print("{s: <10} (Box)", .{@tagName(box_switch.added_pokemon.species)});
                 } else {
-                    try writer.print("{s: <16}", .{@tagName(curr_node.battle.side(side).stored().species)});
+                    try writer.print("{s: <16}", .{@tagName(next_node.battle.side(side).stored().species)});
                 }
             }
         },
