@@ -23,7 +23,7 @@ pub fn TreeAllocator(comptime options: GarbageCollectorOptions, comptime T: type
         parents: ?*std.ArrayList(struct {
             transition: L,
             p: usize,
-        };) = null,
+        }) = null,
 
         pub fn init(allocator_: std.mem.Allocator) Self {
             const gpa = std.heap.GeneralPurposeAllocator(.{}).init();

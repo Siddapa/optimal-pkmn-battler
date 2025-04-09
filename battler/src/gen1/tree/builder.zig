@@ -8,6 +8,7 @@ pub const enemy_ai = @import("enemy_ai.zig");
 pub const scorer = @import("scorer.zig");
 
 pub const score_t = f32;
+const transitions_pre_alloc = 200;
 
 // Maximum number of levels to build tree to
 const MAX_TURNLEVEL: u16 = 100;

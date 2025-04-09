@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
     const wasm = b.addExecutable(.{
         .name = generation,
         .root_source_file = b.path(wasm_source),
-        .optimize = .Debug,
+        .optimize = .ReleaseFast,
         .target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi }),
     });
     wasm.rdynamic = true;

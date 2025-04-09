@@ -1,7 +1,5 @@
 const std = @import("std");
 const assert = std.debug.assert;
-var gpa = std.heap.GeneralPurposeAllocator(.{}).init();
-var alloc = gpa.allocator();
 
 const pkmn = @import("pkmn");
 const Pokemon = pkmn.gen1.helpers.Pokemon;
@@ -276,4 +274,132 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
             try writer.writeAll("Failed to Read Line!\n");
         }
     }
+}
+
+pub fn LinkedList(comptime T: type) type {
+    return struct {
+        const Self = @This();
+        const Node = struct { next: ?*Node, data: T };
+
+        head: ?*Node,
+        inner_alloc: std.mem.Allocator,
+
+        pub fn init(alloc: std.mem.Allocator) Self {
+            return Self{
+                .head = null,
+                .inner_alloc = alloc,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            var curr_node = self.head;
+            while (curr_node) |valid_node| {
+                curr_node = valid_node.next;
+                self.inner_alloc.destroy(valid_node);
+            }
+        }
+
+        // Add an element to the beginning of the list
+        pub fn prepend(self: *Self, new: T) !void {
+            const new_node: ?*Node = try self.inner_alloc.create(Node);
+            new_node.?.* = .{
+                .next = self.head,
+                .data = new,
+            };
+            self.head = new_node;
+        }
+
+        // Add an element to the end of the list
+        pub fn append(self: *Self, new: T) !void {
+            var curr_node = self.head;
+            var prev_node = curr_node;
+            while (curr_node) |valid_node| {
+                prev_node = curr_node;
+                curr_node = valid_node.next;
+            } else {
+                if (prev_node == self.head) {
+                    // New node becomes head node
+                    self.head = try self.inner_alloc.create(Node);
+                    self.head.?.* = .{
+                        .next = null,
+                        .data = new,
+                    };
+                } else {
+                    // New node after last non-null node
+                    prev_node.?.next = try self.inner_alloc.create(Node);
+                    prev_node.?.next.?.* = .{
+                        .next = null,
+                        .data = new,
+                    };
+                }
+            }
+        }
+
+        // Remove a node that evaluates to true when
+        // using the comparison function against a check item
+        pub fn remove(self: *Self, item: T, cmp: fn (T, T) bool) void {
+            var curr_node = self.head;
+            var prev_node = curr_node;
+            while (curr_node) |valid_node| {
+                if (cmp(valid_node.data, item)) {
+                    if (curr_node == self.head) {
+                        self.head = prev_node.?.next;
+                        self.inner_alloc.destroy(prev_node.?);
+                    } else {
+                        prev_node.?.next = valid_node.next;
+                        self.inner_alloc.destroy(valid_node);
+                        break;
+                    }
+                }
+                prev_node = curr_node;
+                curr_node = valid_node.next;
+            }
+        }
+
+        pub fn count(self: *Self) usize {
+            var curr_node = self.head;
+            var c: usize = 0;
+            while (curr_node) |valid_node| {
+                curr_node = valid_node.next;
+                c += 1;
+            }
+            return c;
+        }
+
+        pub fn print_nodes(self: *Self, writer: anytype) !void {
+            var curr_node = self.head;
+            while (curr_node) |valid_node| {
+                curr_node = valid_node.next;
+                try writer.print("{}\n", .{valid_node.data});
+            }
+        }
+    };
+}
+
+fn cmp_int(x: i8, y: i8) bool {
+    return x == y;
+}
+
+test "linked list ops" {
+    var list = LinkedList(i8).init(std.testing.allocator);
+
+    try list.append(20);
+    try list.prepend(10);
+    try list.append(30);
+    try list.append(40);
+    try list.prepend(0);
+    assert(list.count() == 5);
+
+    list.remove(10, cmp_int);
+    list.remove(0, cmp_int);
+    list.remove(40, cmp_int);
+    assert(list.count() == 2);
+
+    try list.append(50);
+    try list.prepend(-10);
+    assert(list.count() == 4);
+
+    try list.print_nodes(std.io.getStdErr().writer());
+
+    list.deinit();
 }
