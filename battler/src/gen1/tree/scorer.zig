@@ -20,7 +20,7 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, probability: builde
             score += 500 * dead(enemy_side);
             score -= 500 * dead(player_side);
 
-            score += 2 * damage_per_turn(enemy_side, battle.turn, false);
+            score += 1 * damage_per_turn(enemy_side, battle.turn, false);
             score -= 1 * damage_per_turn(player_side, battle.turn, true);
 
             score += status(enemy_side);
@@ -29,14 +29,11 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, probability: builde
             score += status(enemy_side);
             score -= status(player_side);
 
-            var prob_mul: score_t = 0;
-            // Switches are high probability events that should be weighed separately
             if (probability < 1e-3) {
-                prob_mul = 1000000;
+                score += 1000000 * probability;
             } else {
-                prob_mul = 100;
+                score += 100 * probability;
             }
-            score += prob_mul * probability;
         },
         .Win => {
             score += std.math.floatMax(score_t);

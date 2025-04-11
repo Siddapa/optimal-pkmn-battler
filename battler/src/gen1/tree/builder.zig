@@ -8,19 +8,20 @@ pub const enemy_ai = @import("enemy_ai.zig");
 pub const scorer = @import("scorer.zig");
 
 pub const score_t = f32;
-const transitions_pre_alloc = 200;
 
 // Maximum number of levels to build tree to
-const MAX_TURNLEVEL: u16 = 100;
+const MAX_TURNLEVEL: u16 = 15;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 1;
+const LOOKAHEAD: u4 = 3;
 
 // Maximum number of nodes to optimize for at a given level
 const K_LARGEST: u16 = 1;
 
-// Minimum node score required for further extension
-pub const MIN_SCORE: score_t = -1e6;
+// floatMin() provides smallest POSITIVE float which messes with @min()
+// Arbitrary min value that could fail
+pub const ALPHA_MIN: score_t = -1e30;
+pub var PRUNING: bool = true;
 
 // Binary mask for which of the 16 rolls to generate
 const ROLL_INTERVALS: u16 = 0b1000000000000000;
@@ -37,21 +38,15 @@ pub const DecisionNode = struct {
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     team: [6]TeamSlotState,
     result: pkmn.Result,
-    score: score_t = MIN_SCORE + 1, // Ensures nodes by default pass exhaustion
+    score: score_t = 0,
     transitions: std.ArrayList(*DecisionNode),
     // Below fields represent options for arriving at the current node
     // from a previous node
-    probability: score_t = 1,
     choices: [2]pkmn.Choice = .{ pkmn.Choice{}, pkmn.Choice{} },
     chance: struct {
         actions: pkmn.gen1.chance.Actions = pkmn.gen1.chance.Actions{},
         durations: pkmn.gen1.chance.Durations = pkmn.gen1.chance.Durations{},
     } = .{},
-    box_switch: ?struct {
-        added_pokemon: pkmn.gen1.Pokemon,
-        order_slot: usize,
-        box_id: usize,
-    } = null,
 };
 const TeamSlotState = union(enum) {
     Empty,
@@ -70,8 +65,8 @@ pub fn optimal_decision_tree(
     starting_battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     starting_result: pkmn.Result,
     box: []const pkmn.gen1.Pokemon,
-    alloc: std.mem.Allocator,
     threaded: bool,
+    alloc: std.mem.Allocator,
 ) !*DecisionNode {
     const root: *DecisionNode = try alloc.create(DecisionNode);
     root.* = .{
@@ -81,17 +76,16 @@ pub fn optimal_decision_tree(
         .transitions = std.ArrayList(*DecisionNode).init(alloc),
     };
     var scoring_nodes = std.ArrayList(*DecisionNode).init(alloc);
+    var scored_nodes = std.ArrayList(*DecisionNode).init(alloc);
     defer scoring_nodes.deinit();
+    defer scored_nodes.deinit();
 
     try scoring_nodes.append(root);
 
     var level: u16 = 1;
+    print("Level | # of Nodes\n", .{});
     while (level < MAX_TURNLEVEL) {
-        print("Level: {d}\n", .{level});
-        // Must be list of Transition to be compatible with compare function for sorting by score
-        var scored_nodes = std.ArrayList(*DecisionNode).init(alloc);
-        defer scored_nodes.deinit();
-
+        print("{:>5}   {:>10}\n", .{ level, count_nodes(root) });
         if (threaded) {
             var pool: std.Thread.Pool = undefined;
             var wg = std.Thread.WaitGroup{};
@@ -101,20 +95,34 @@ pub fn optimal_decision_tree(
             // Extend leaves of scoring_nodes to maximize level for scoring
             for (scoring_nodes.items) |scoring_node| {
                 if (scoring_node.result.type == .None) {
-                    pool.spawnWg(&wg, exhaustive_decision_tree, .{ scoring_node, box, 0, alloc });
+                    pool.spawnWg(&wg, ts_exhaustive_decision_tree, .{
+                        scoring_node,
+                        box,
+                        alloc,
+                    });
                 }
 
                 try scored_nodes.append(scoring_node);
             }
             pool.waitAndWork(&wg);
         } else {
-            for (scoring_nodes.items) |scoring_node| {
+            const scoring_nodes_len = scoring_nodes.items.len;
+            for (scoring_nodes.items, 0..) |scoring_node, i| {
                 if (scoring_node.result.type == .None) {
-                    exhaustive_decision_tree(scoring_node, box, 0, alloc);
+                    const data = try exhaustive_decision_tree(
+                        scoring_node,
+                        box,
+                        0,
+                        ALPHA_MIN,
+                        std.math.floatMax(score_t),
+                        alloc,
+                    );
+                    print("# of Nodes: {?d}, Branches Skipped: {?d}, ({}/{})\r", .{ data[2], data[3], i, scoring_nodes_len });
                 }
 
                 try scored_nodes.append(scoring_node);
             }
+            print("\n", .{});
         }
 
         // Keep only the K_LARGEST nodes
@@ -139,13 +147,14 @@ pub fn optimal_decision_tree(
             // If adding new nodes to tree however, must realloc for those
         }
 
-        scoring_nodes.clearAndFree();
+        scoring_nodes.clearRetainingCapacity();
         // Save chlidren of scored_nodes as next scoring_nodes
         for (scored_nodes.items) |scored_node| {
             for (scored_node.transitions.items) |next_node| {
                 try scoring_nodes.append(next_node);
             }
         }
+        scored_nodes.clearRetainingCapacity();
 
         // print("Scorable Nodes: {}\n", .{scoring_nodes.items.len});
 
@@ -155,122 +164,166 @@ pub fn optimal_decision_tree(
 
         level += 1;
     }
+    print("Finished!\n", .{});
     return root;
+}
+
+fn ts_exhaustive_decision_tree(
+    curr_node: *DecisionNode,
+    box: []const pkmn.gen1.Pokemon,
+    alloc: std.mem.Allocator,
+) void {
+    _ = exhaustive_decision_tree(curr_node, box, 0, ALPHA_MIN, std.math.floatMax(score_t), alloc) catch unreachable;
 }
 
 pub fn exhaustive_decision_tree(
     curr_node: *DecisionNode,
     box: []const pkmn.gen1.Pokemon,
     level: u16,
+    alpha_: score_t,
+    beta_: score_t,
     alloc: std.mem.Allocator,
-) void {
+) ![4]?score_t {
     // TODO Prevent leaves from making extra recursive call to check LOOKAHEAD
-    if (level < LOOKAHEAD and curr_node.score >= MIN_SCORE) {
-        if (curr_node.transitions.items.len == 0) {
-            var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-            var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+    var alpha = alpha_;
+    var beta = beta_;
+    if (level < LOOKAHEAD) {
+        var count: u32 = 0;
+        var skipped: u32 = 0;
+        // for (curr_node.transitions.items) |transition| {
+        //     free_tree(transition, alloc);
+        // }
+        // curr_node.transitions.clearAndFree();
 
-            const player_max = curr_node.battle.choices(.P1, curr_node.result.p1, &player_choices);
-            const player_valid_choices = player_choices[0..player_max];
+        var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
+        var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
 
-            const enemy_max = enemy_ai.pick_choice(curr_node, 0, &enemy_choices, alloc);
-            const enemy_valid_choices = enemy_choices[0..enemy_max];
+        const player_max = curr_node.battle.choices(.P1, curr_node.result.p1, &player_choices);
+        const player_valid_choices = player_choices[0..player_max];
 
-            for (enemy_valid_choices) |enemy_choice| {
-                for (player_valid_choices) |player_choice| {
-                    const new_updates = transitions(curr_node.battle, player_choice, enemy_choice, curr_node.chance.durations, alloc) catch unreachable;
-                    for (new_updates) |new_update| {
-                        const child_node: *DecisionNode = alloc.create(DecisionNode) catch unreachable;
+        const enemy_max = enemy_ai.pick_choice(curr_node, 0, &enemy_choices, alloc);
+        const enemy_valid_choices = enemy_choices[0..enemy_max];
+
+        for (enemy_valid_choices) |enemy_choice| {
+            for (player_valid_choices) |player_choice| {
+                // TODO Check alpha/beta prior to transition creation to optimize further
+                const new_updates = try transitions(curr_node.battle, player_choice, enemy_choice, curr_node.chance.durations, alloc);
+                for (new_updates) |new_update| {
+                    if (alpha < beta or !PRUNING) {
+                        const child_node: *DecisionNode = try alloc.create(DecisionNode);
                         child_node.* = .{
                             .prev_node = curr_node,
                             .battle = new_update.battle,
                             .team = curr_node.team,
                             .result = new_update.result,
-                            .score = scorer.score_node(child_node, new_update.probability) catch unreachable,
-                            .probability = new_update.probability,
+                            .score = try scorer.score_node(child_node, new_update.probability),
                             .transitions = std.ArrayList(*DecisionNode).init(alloc),
                             .choices = .{ player_choice, enemy_choice },
                             .chance = .{
                                 .actions = new_update.actions,
                                 .durations = new_update.durations,
                             },
-                            .box_switch = null,
                         };
-                        curr_node.transitions.append(child_node) catch unreachable;
-                        exhaustive_decision_tree(
+                        try curr_node.transitions.append(child_node);
+                        const candidates = try exhaustive_decision_tree(
                             child_node,
                             box,
                             level + 1,
+                            alpha,
+                            beta,
                             alloc,
                         );
+                        count += 1 + @as(u32, @intFromFloat(candidates[2] orelse 0));
+                        skipped += @as(u32, @intFromFloat(candidates[3] orelse 0));
+                        update_alpha_beta(level, &alpha, &beta, candidates);
+                    } else {
+                        skipped += 1;
                     }
-
-                    alloc.free(new_updates);
                 }
 
-                assert(player_max > 0);
-                // TODO Proper validation of whether box switch is legal (Block, etc.)
-                // TODO .Pass used for death switches which box switches should be valid for
-                if (player_valid_choices[0].type != .Pass) { // Can't force box switch when not able to select a switch
-                    if (find_empty_slot(&curr_node.team)) |new_member_slot| {
-                        for (box, 0..) |box_mon, box_index| {
-                            var in_box: bool = false;
-                            for (curr_node.team) |box_state| {
-                                switch (box_state) {
-                                    .Filled => |team_index| in_box = box_index == team_index,
-                                    else => continue,
-                                }
-                            }
-                            // Only box_switch if box_mon isn't already on the team
-                            if (!in_box) {
-                                var next_battle = curr_node.battle;
-                                const switch_choice: pkmn.Choice = add_to_team(&next_battle, box_mon, new_member_slot);
-                                var new_team = curr_node.team;
-                                new_team[new_member_slot] = TeamSlotState{ .Filled = @intCast(box_index) };
+                alloc.free(new_updates);
+            }
 
-                                const new_updates = transitions(next_battle, switch_choice, enemy_choice, curr_node.chance.durations, alloc) catch unreachable;
-                                for (new_updates) |new_update| {
-                                    const child_node: *DecisionNode = alloc.create(DecisionNode) catch unreachable;
+            assert(player_max > 0);
+            // TODO Proper validation of whether box switch is legal (Block, etc.)
+            // TODO .Pass used for death switches which box switches should be valid for
+            if (player_valid_choices[0].type != .Pass) { // Can't force box switch when not able to select a switch
+                if (find_empty_slot(&curr_node.team)) |new_member_slot| {
+                    for (box, 0..) |box_mon, box_index| {
+                        var in_box: bool = false;
+                        for (curr_node.team) |box_state| {
+                            switch (box_state) {
+                                .Filled => |team_index| in_box = box_index == team_index,
+                                else => continue,
+                            }
+                        }
+                        // Only box_switch if box_mon isn't already on the team
+                        if (!in_box) {
+                            var next_battle = curr_node.battle;
+                            const switch_choice: pkmn.Choice = add_to_team(&next_battle, box_mon, new_member_slot);
+                            var new_team = curr_node.team;
+                            new_team[new_member_slot] = TeamSlotState{ .Filled = @intCast(box_index) };
+
+                            const new_updates = try transitions(next_battle, switch_choice, enemy_choice, curr_node.chance.durations, alloc);
+                            for (new_updates) |new_update| {
+                                if (alpha < beta or !PRUNING) {
+                                    const child_node: *DecisionNode = try alloc.create(DecisionNode);
                                     child_node.* = .{
                                         .prev_node = curr_node,
                                         .battle = new_update.battle,
                                         .team = new_team,
                                         .result = new_update.result,
-                                        .score = scorer.score_node(child_node, new_update.probability) catch unreachable,
-                                        .probability = new_update.probability,
+                                        .score = try scorer.score_node(child_node, new_update.probability),
                                         .transitions = std.ArrayList(*DecisionNode).init(alloc),
                                         .choices = .{ switch_choice, enemy_choice },
                                         .chance = .{
                                             .actions = new_update.actions,
                                             .durations = new_update.durations,
                                         },
-                                        .box_switch = .{
-                                            .added_pokemon = box_mon,
-                                            .order_slot = new_member_slot,
-                                            .box_id = box_index,
-                                        },
                                     };
-                                    curr_node.transitions.append(child_node) catch unreachable;
-                                    exhaustive_decision_tree(
+                                    try curr_node.transitions.append(child_node);
+                                    const candidates = try exhaustive_decision_tree(
                                         child_node,
                                         box,
                                         level + 1,
+                                        alpha,
+                                        beta,
                                         alloc,
                                     );
+                                    count += 1 + @as(u32, @intFromFloat(candidates[2] orelse 0));
+                                    skipped += @as(u32, @intFromFloat(candidates[3] orelse 0));
+                                    update_alpha_beta(level, &alpha, &beta, candidates);
+                                } else {
+                                    skipped += 1;
                                 }
-
-                                alloc.free(new_updates);
                             }
+
+                            alloc.free(new_updates);
                         }
                     }
                 }
             }
-        } else {
-            for (curr_node.transitions.items) |next_node| {
-                exhaustive_decision_tree(next_node, box, level + 1, alloc);
-            }
+        }
+        return .{ alpha, beta, @as(score_t, @floatFromInt(count)), @as(score_t, @floatFromInt(skipped)) };
+    } else {
+        return .{ curr_node.score, null, 0, 0 };
+    }
+}
+
+fn update_alpha_beta(level: u16, alpha: *score_t, beta: *score_t, candidates: [4]?score_t) void {
+    // print("Level: {}\n", .{level});
+    // print("Pre: {} {}\n", .{ alpha.*, beta.* });
+    // print("Candidates: {?} {?}\n", .{ candidates[0], candidates[1] });
+    if (level % 2 == 0) {
+        for (candidates, 0..) |candidate, i| {
+            if (i < 2) alpha.* = @max(alpha.*, candidate orelse ALPHA_MIN);
+        }
+    } else {
+        for (candidates, 0..) |candidate, i| {
+            if (i < 2) beta.* = @min(beta.*, candidate orelse std.math.floatMax(score_t));
         }
     }
+    // print("Post: {} {}\n\n", .{ alpha.*, beta.* });
 }
 
 pub fn transitions(
@@ -446,7 +499,7 @@ pub fn find_empty_slot(team: []TeamSlotState) ?usize {
     return empty_slot;
 }
 
-fn compare_score(_: void, n1: *DecisionNode, n2: *DecisionNode) bool {
+pub fn compare_score(_: void, n1: *DecisionNode, n2: *DecisionNode) bool {
     // TODO Improper comparison
     if (n1.score > n2.score) {
         return true;

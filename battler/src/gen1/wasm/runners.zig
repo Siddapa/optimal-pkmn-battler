@@ -9,7 +9,7 @@ const tree = @import("tree");
 const pkmn = @import("pkmn");
 const import = @import("import.zig");
 
-var tree_gen_alloc = da.allocator();
+var tree_gen_alloc = std.heap.wasm_allocator;
 var import_alloc: std.mem.Allocator = undefined;
 var tree_prep_alloc: std.mem.Allocator = undefined;
 
@@ -22,13 +22,6 @@ pub const pkmn_options = pkmn.Options{ .internal = true };
 
 export fn test_int() usize {
     return @as(usize, 11239);
-}
-
-export fn test_string(out: [*]u8) usize {
-    const species_str = player_imports.items[0].species;
-    print("{s}\n", .{species_str});
-    @memcpy(out, species_str);
-    return species_str.len;
 }
 
 export fn init() void {
@@ -127,7 +120,7 @@ export fn generateOptimizedDecisionTree(lead: u8) ?*tree.DecisionNode {
     // return root;
 
     const imm_box: []const pkmn.gen1.Pokemon = box.items;
-    if (tree.optimal_decision_tree(battle, result, imm_box, tree_gen_alloc)) |decision_tree| {
+    if (tree.optimal_decision_tree(battle, result, imm_box, true, tree_gen_alloc)) |decision_tree| {
         decision_tree_instance = decision_tree;
         return decision_tree_instance;
     } else |err| {
@@ -152,9 +145,13 @@ export fn getResult(curr_node: *tree.DecisionNode) i8 {
     return if (curr_node.result.type == .None) 1 else 0;
 }
 
-export fn getTeam(curr_node: *tree.DecisionNode, out: [*]i8) u8 {
+export fn getTeam(curr_node: *tree.DecisionNode, out: [*]i32) u8 {
     for (0..6) |i| {
-        out[i] = curr_node.team[i];
+        switch (curr_node.team[i]) {
+            .Empty => out[i] = -1,
+            .Lead => out[i] = -2,
+            .Filled => |box_id| out[i] = @bitCast(box_id),
+        }
     }
     return 6;
 }
@@ -224,14 +221,60 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
     }
 }
 
-// WASIWorkerHost requires _start export
-export fn _start() void {
-    const stdin = std.io.getStdIn().reader();
-    var buf: [128]u8 = undefined;
+export fn main() void {
+    const alloc = std.heap.wasm_allocator;
+    const battle = tree.tools.init_battle(&.{
+        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
+        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
+    }, &.{
+        .{ .species = .Pidgey, .moves = &.{.Pound} },
+        .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
+        .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
+        .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
+        .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
+        .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
+    });
+    const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
+        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
+        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
+        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
+        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
+    };
+    var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
+    var options = pkmn.battle.options(
+        pkmn.protocol.NULL,
+        &chance,
+        pkmn.gen1.Calc{},
+    );
 
-    while (true) {
-        const length: usize = stdin.read(&buf) catch return;
-        _ = length;
-        print("{s}\n", .{buf});
+    var test_box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
+    defer test_box.deinit();
+    for (box_pokemon) |mon| {
+        test_box.append(pkmn.gen1.helpers.Pokemon.init(mon)) catch unreachable;
     }
+
+    var b = battle;
+    const result = b.update(pkmn.Choice{}, pkmn.Choice{}, &options) catch unreachable;
+
+    const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+    const root: *tree.DecisionNode = tree.optimal_decision_tree(b, result, box.items, false, alloc) catch unreachable;
+    const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+
+    const num_of_nodes = tree.count_nodes(root);
+    std.debug.print("Num Of Nodes: {}\n", .{num_of_nodes});
+    tree.free_tree(root, alloc);
+
+    std.debug.print("Optimal1: {d} ms\n", .{end_time - start_time});
 }
+
+// WASIWorkerHost requires _start export
+// export fn _start() void {
+//     const stdin = std.io.getStdIn().reader();
+//     var buf: [128]u8 = undefined;
+//
+//     while (true) {
+//         const length: usize = stdin.read(&buf) catch return;
+//         _ = length;
+//         print("{s}\n", .{buf});
+//     }
+// }

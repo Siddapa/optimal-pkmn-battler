@@ -1,7 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 var da: std.heap.DebugAllocator(.{}) = .init;
-var alloc = da.allocator();
+// var alloc = da.allocator();
+// var alloc = std.testing.allocator;
+var alloc = std.heap.smp_allocator;
 
 const pkmn = @import("pkmn");
 
@@ -21,12 +23,33 @@ var options = pkmn.battle.options(
 pub fn main() !void {
     // try base_transitions();
     // try box_switch_transitions();
-    try optimalWASM();
-    // try optimal1();
-    // try exhaust();
+    // try optimalWASM();
+    try optimal1();
+    // try exhaust_random();
     // try exhaust1();
     // try exhaust2();
     // try box_switch_exhaust();
+}
+
+fn random_battle(seed: u64) !struct {
+    battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
+    box: std.ArrayList(pkmn.gen1.Pokemon),
+} {
+    var rng = pkmn.PSRNG.init(seed);
+    const rand_opts = pkmn.gen1.helpers.Options{
+        .cleric = false,
+        .block = false,
+    };
+
+    const battle = pkmn.gen1.helpers.Battle.random(&rng, rand_opts);
+
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
+    const box_size = rng.range(usize, 1, 10);
+    for (0..box_size) |_| {
+        try box.append(pkmn.gen1.helpers.Pokemon.random(&rng, rand_opts));
+    }
+
+    return .{ .battle = battle, .box = box };
 }
 
 fn base_transitions() !void {
@@ -93,7 +116,7 @@ fn box_switch_transitions() !void {
     try run_transitions(battle, result);
 }
 
-fn exhaust() !void {
+fn exhaust_random() !void {
     const random_setup = try random_battle(@as(u64, @bitCast(std.time.milliTimestamp())));
     const runtime = try run_exhaust(random_setup.battle, random_setup.box);
     try stdout.print("Exhaust1: {d} ms\n\n", .{runtime});
@@ -101,7 +124,7 @@ fn exhaust() !void {
 
 fn exhaust1() !void {
     const battle = builder.tools.init_battle(&.{
-        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
+        .{ .species = .Pikachu, .moves = &.{.SeismicToss} },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{ .Pound, .QuickAttack } },
         .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
@@ -119,13 +142,7 @@ fn exhaust1() !void {
         .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
     };
 
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-    defer box.deinit();
-    for (box_pokemon) |mon| {
-        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
-    }
-
-    const runtime = try run_exhaust(battle, box);
+    const runtime = try run_exhaust(battle, &box_pokemon);
 
     try stdout.print("Exhaust1: {d} ms\n\n", .{runtime});
 }
@@ -194,6 +211,7 @@ fn optimalWASM() !void {
 fn optimal1() !void {
     const battle = builder.tools.init_battle(&.{
         .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
+        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{.Pound} },
         .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
@@ -203,7 +221,6 @@ fn optimal1() !void {
         .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
     });
     const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
-        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
         .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
         .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
         .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
@@ -213,41 +230,6 @@ fn optimal1() !void {
     const runtime = try run_optimal(battle, &box_pokemon);
 
     try stdout.print("Optimal1: {d} ms\n", .{runtime});
-}
-
-fn random() !void {
-    try stdout.print("Random\n", .{});
-    var battle = builder.tools.init_battle(&.{
-        .{ .species = .Bulbasaur, .moves = &.{.BodySlam} },
-    }, &.{
-        .{ .species = .Pidgey, .moves = &.{.Pound} },
-    });
-
-    var prng = std.Random.DefaultPrng.init(0);
-    var rand = prng.random();
-
-    var player_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-    var enemy_choices: [pkmn.CHOICES_SIZE]pkmn.Choice = undefined;
-
-    var c1 = pkmn.Choice{};
-    var c2 = pkmn.Choice{};
-    var result = battle.update(c1, c2, &options) catch pkmn.Result{};
-    while (result.type == .None) {
-        const max1 = battle.choices(.P1, result.p1, &player_choices);
-        const n1 = rand.uintLessThan(u8, max1);
-        c1 = player_choices[n1];
-
-        const max2: u8 = @intCast(enemy_ai.pick_choice(battle, result, 0, &enemy_choices, alloc));
-        const n2 = rand.uintLessThan(u8, max2);
-        c2 = enemy_choices[n2];
-
-        try builder.tools.battle_details(battle, builder.tools.DetailOptions.all(), stdout);
-        // TODO Also display transition
-        try stdout.print("\n\n", .{});
-
-        result = battle.update(c1, c2, &options) catch pkmn.Result{};
-    }
-    try stdout.print("{}\n", .{result.type});
 }
 
 fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result) !void {
@@ -298,32 +280,11 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     try stdout.print("Enemy Choices: {}\n", .{enemy_valid_choices.len});
 }
 
-fn random_battle(seed: u64) !struct {
-    battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
-    box: std.ArrayList(pkmn.gen1.Pokemon),
-} {
-    var rng = pkmn.PSRNG.init(seed);
-    const rand_opts = pkmn.gen1.helpers.Options{
-        .cleric = false,
-        .block = false,
-    };
-
-    const battle = pkmn.gen1.helpers.Battle.random(&rng, rand_opts);
-
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-    const box_size = rng.range(usize, 1, 10);
-    for (0..box_size) |_| {
-        try box.append(pkmn.gen1.helpers.Pokemon.random(&rng, rand_opts));
-    }
-
-    return .{ .battle = battle, .box = box };
-}
-
 fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u128 {
     var b = battle;
     const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(std.heap.smp_allocator);
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
@@ -341,32 +302,19 @@ fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    builder.exhaustive_decision_tree(root, box.items, 0, alloc);
+    _ = try builder.exhaustive_decision_tree(root, box.items, 0, builder.ALPHA_MIN, std.math.floatMax(builder.score_t), alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    try tools.traverse_decision_tree(root, stdout);
+    try tools.traverse_decision_tree(root, box.items, stdout, alloc);
+
+    try stdout.print("# of Nodes: {}\n", .{builder.count_nodes(root)});
 
     return end_time - start_time;
 }
 
-fn compare_score(_: void, t1: builder.Transition, t2: builder.Transition) bool {
-    if (t1.next_node.score > t2.next_node.score) {
-        return true;
-    }
-    return false;
-}
-
-fn compare_prob(_: void, t1: builder.Transition, t2: builder.Transition) bool {
-    if (t1.next_node.probability > t2.next_node.probability) {
-        return true;
-    }
-    return false;
-}
-
 fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u64 {
-    const optimal_alloc = std.heap.smp_allocator;
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(optimal_alloc);
+    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
     for (box_pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
@@ -377,16 +325,16 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, optimal_alloc, true);
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, true, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    try builder.tools.traverse_decision_tree(root, stdout);
+    try builder.tools.traverse_decision_tree(root, box.items, stdout, alloc);
 
     const num_of_nodes = builder.count_nodes(root);
     try stdout.print("Num Of Nodes: {}\n", .{num_of_nodes});
 
-    builder.free_tree(root, optimal_alloc);
+    builder.free_tree(root, alloc);
 
     return end_time - start_time;
 }

@@ -33,8 +33,9 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
     assert(0 <= team1.len and team1.len <= 6);
     assert(0 <= team2.len and team2.len <= 6);
 
-    const curr_time = @as(u64, @bitCast(std.time.milliTimestamp()));
-    var prng = (if (@hasDecl(std, "Random")) std.Random else std.rand).DefaultPrng.init(curr_time);
+    // const curr_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+    // TODO Deterministic transitions still influenced by seed
+    var prng = (if (@hasDecl(std, "Random")) std.Random else std.rand).DefaultPrng.init(1234);
     var random = prng.random();
 
     const battle = pkmn.gen1.helpers.Battle.init(
@@ -190,19 +191,20 @@ pub fn display_choice(next_node: *builder.DecisionNode, comptime player: usize, 
         },
         .Switch => {
             if (choice.data != 42) {
-                if (next_node.box_switch) |box_switch| {
-                    try writer.print("{s: <10} (Box)", .{@tagName(box_switch.added_pokemon.species)});
-                } else {
-                    try writer.print("{s: <16}", .{@tagName(next_node.battle.side(side).stored().species)});
-                }
+                try writer.print("{s: <16}", .{@tagName(next_node.battle.side(side).stored().species)});
             }
         },
-        else => {},
+        .Pass => try writer.writeAll("Pass"),
     }
     try writer.writeAll(", ");
 }
 
-pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype) !void {
+pub fn traverse_decision_tree(
+    start_node: *builder.DecisionNode,
+    box: []const pkmn.gen1.Pokemon,
+    writer: anytype,
+    alloc: std.mem.Allocator,
+) !void {
     var curr_node = start_node;
     while (true) {
         // Spacing between node selections
@@ -223,6 +225,7 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
 
         // Displays possible moves/switches as well as traversing to previous nodes/quitting
         try writer.writeAll("Select one of the following choices: \n");
+        std.mem.sort(*builder.DecisionNode, curr_node.transitions.items, {}, builder.compare_score);
         for (curr_node.transitions.items, 0..) |next_node, i| {
             const next_node_transitions = next_node.transitions.items.len;
 
@@ -233,9 +236,9 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
             try display_choice(next_node, 0, writer);
             try display_choice(next_node, 1, writer);
 
-            try writer.print("{d:4.4}, {d:.9}, {:02}, ", .{
+            try writer.print("{d:06.4}, {:02}, ", .{
                 next_node.score,
-                next_node.probability,
+                // next_node.probability,
                 next_node_transitions,
             });
 
@@ -245,9 +248,9 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
         }
 
         if (curr_node.prev_node) |_| {
-            try writer.writeAll("p=previous turn, q=quit\n");
+            try writer.writeAll("p=previous turn, e=exhaust_node, q=quit\n");
         } else {
-            try writer.writeAll("q=quit\n");
+            try writer.writeAll("e=exhaust_node, q=quit\n");
         }
 
         // Takes a single character (u8) for processing next node to follow
@@ -259,11 +262,20 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
                 break;
             } else if (49 <= user_input[0] and user_input[0] <= 57) { // ASCII range of integers from 1-9
                 const choice_id = try std.fmt.parseInt(u16, user_input, 10);
-                curr_node = curr_node.transitions.items[choice_id - 1];
+                if (0 <= choice_id - 1 and choice_id - 1 <= curr_node.transitions.items.len) {
+                    curr_node = curr_node.transitions.items[choice_id - 1];
+                } else {
+                    try writer.writeAll("Move selection out of range!\n");
+                    break;
+                }
             } else if (user_input[0] == 'c') {
                 curr_node = curr_node.transitions.items[0];
             } else if (user_input[0] == 'p') {
                 curr_node = curr_node.prev_node.?;
+            } else if (user_input[0] == 'e') {
+                builder.PRUNING = false;
+                _ = try builder.exhaustive_decision_tree(curr_node, box, 0, 0, 0, alloc);
+                builder.PRUNING = true;
             } else if (user_input[0] == 'q') {
                 break;
             } else {
@@ -271,8 +283,10 @@ pub fn traverse_decision_tree(start_node: *builder.DecisionNode, writer: anytype
                 break;
             }
         } else {
-            try writer.writeAll("Failed to Read Line!\n");
+            try writer.writeAll("Failed to read line!\n");
         }
+
+        try writer.writeAll("\x1B[2J\x1B[H");
     }
 }
 

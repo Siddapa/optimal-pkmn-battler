@@ -36,9 +36,9 @@ fn generate_battles(data_file: std.fs.File, seed: u64, sample_size: u16, alloc: 
     const init_node: *builder.DecisionNode = try alloc.create(builder.DecisionNode);
     init_node.* = .{
         .battle = init_battle,
-        .team = .{ 0, -1, -1, -1, -1, -1 }, // Technically should represent random team but irrelevant
+        .team = .{ .Lead, .Empty, .Empty, .Empty, .Empty, .Empty }, // Technically should represent random team but irrelevant
         .result = init_result,
-        .previous_node = null,
+        .prev_node = null,
         .transitions = std.ArrayList(builder.Transition).init(alloc),
     };
     var empty_box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
