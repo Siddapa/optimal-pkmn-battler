@@ -223,23 +223,37 @@ export fn importPokemon(json_import: [*]u8, size: usize, player: u8) void {
 
 export fn main() void {
     const alloc = std.heap.wasm_allocator;
+    // const battle = tree.tools.init_battle(&.{
+    //     .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
+    //     .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
+    // }, &.{
+    //     .{ .species = .Pidgey, .moves = &.{.Pound} },
+    //     .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
+    //     .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
+    //     .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
+    //     .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
+    //     .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
+    // });
+    // const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
+    //     .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
+    //     .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
+    //     .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
+    //     .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
+    // };
+
     const battle = tree.tools.init_battle(&.{
-        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .ThunderWave, .Surf, .SeismicToss } },
-        .{ .species = .Bulbasaur, .moves = &.{ .SleepPowder, .SwordsDance, .RazorLeaf, .BodySlam } },
+        .{ .species = .Articuno, .moves = &.{ .IceBeam, .Growl, .Tackle, .Wrap } },
     }, &.{
-        .{ .species = .Pidgey, .moves = &.{.Pound} },
-        .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
-        .{ .species = .Snorlax, .moves = &.{ .BodySlam, .Reflect, .Rest, .IceBeam } },
-        .{ .species = .Exeggutor, .moves = &.{ .SleepPowder, .Psychic, .Explosion, .DoubleEdge } },
-        .{ .species = .Starmie, .moves = &.{ .Recover, .ThunderWave, .Blizzard, .Thunderbolt } },
-        .{ .species = .Alakazam, .moves = &.{ .Psychic, .SeismicToss, .ThunderWave, .Recover } },
+        .{ .species = .Jynx, .moves = &.{ .AuroraBeam, .HyperBeam, .DrillPeck, .Peck } },
+        .{ .species = .Chansey, .moves = &.{ .Counter, .SeismicToss, .Strength, .Absorb } },
+        .{ .species = .Goldeen, .moves = &.{ .RazorLeaf, .SolarBeam, .PoisonPowder, .FireSpin } },
     });
+
     const box_pokemon = [_]pkmn.gen1.helpers.Pokemon{
-        .{ .species = .Charmander, .moves = &.{ .FireBlast, .FireSpin, .Slash, .Counter } },
-        .{ .species = .Squirtle, .moves = &.{ .Surf, .Blizzard, .BodySlam, .Rest } },
-        .{ .species = .Rattata, .moves = &.{ .SuperFang, .BodySlam, .Blizzard, .Thunderbolt } },
-        .{ .species = .Pidgey, .moves = &.{ .DoubleEdge, .QuickAttack, .WingAttack, .MirrorMove } },
+        .{ .species = .Kingler, .moves = &.{ .SandAttack, .Headbutt, .HornAttack, .TailWhip } },
+        .{ .species = .Rhyhorn, .moves = &.{ .RockThrow, .Mist, .WaterGun, .Psybeam } },
     };
+
     var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
     var options = pkmn.battle.options(
         pkmn.protocol.NULL,
@@ -259,6 +273,8 @@ export fn main() void {
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
     const root: *tree.DecisionNode = tree.optimal_decision_tree(b, result, box.items, false, alloc) catch unreachable;
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
+
+    tree.tools.traverse_decision_tree(root, test_box.items, std.io.getStdOut().writer(), alloc) catch unreachable;
 
     const num_of_nodes = tree.count_nodes(root);
     std.debug.print("Num Of Nodes: {}\n", .{num_of_nodes});

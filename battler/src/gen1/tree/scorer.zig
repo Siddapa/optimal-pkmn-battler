@@ -9,7 +9,7 @@ pub const NTN = struct {};
 
 pub const Side = struct {};
 
-pub fn score_node(scoring_node: *const builder.DecisionNode, probability: builder.score_t) !score_t {
+pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.gen1.Pokemon, probability: builder.score_t) !score_t {
     const battle = scoring_node.battle;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);
@@ -23,11 +23,11 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, probability: builde
             score += 1 * damage_per_turn(enemy_side, battle.turn, false);
             score -= 1 * damage_per_turn(player_side, battle.turn, true);
 
-            score += status(enemy_side);
-            score -= status(player_side);
+            score += 2 * status(enemy_side);
+            score -= 2 * status(player_side);
 
-            score += status(enemy_side);
-            score -= status(player_side);
+            score += 1 * volatiles(&battle, box, false);
+            score += 1 * volatiles(&battle, box, true);
 
             if (probability < 1e-3) {
                 score += 1000000 * probability;
@@ -94,20 +94,120 @@ fn status(side: *const pkmn.gen1.Side) score_t {
     return 0;
 }
 
-fn volatiles(side: *const pkmn.gen1.Side) score_t {
-    const active = side.active;
-    // const stored = side.stored();
+const Volatiles = enum(u16) {
+    Bide,
+    Thrashing,
+    MultiHit,
+    Flinch,
+    Charging,
+    Binding,
+    Invulnerable,
+    Confusion,
+    Mist,
+    FocusEnergy,
+    Substitute,
+    Recharging,
+    Rage,
+    LeechSeed,
+    Toxic,
+    LightScreen,
+    Reflect,
+    Transform,
+    confusion,
+    attacks,
+    state,
+    substitute,
+    transform,
+    disable_duration,
+    disable_move,
+    toxic,
+};
 
-    const volatile_map = std.StaticStringMap(type).initComptime(.{
+fn volatiles(battle: *const pkmn.gen1.Battle(pkmn.gen1.PRNG), box: []const pkmn.gen1.Pokemon, player: bool) score_t {
+    const player_side = battle.side(.P1);
+    const enemy_side = battle.side(.P1);
+    const active = if (player) player_side.active else enemy_side.active;
+
+    const volatile_map = std.StaticStringMap(Volatiles).initComptime(.{
+        // bools
         .{ "Bide", .Bide },
+        .{ "Thrashing", .Thrashing },
+        .{ "MultiHit", .MultiHit },
+        .{ "Flinch", .Flinch },
+        .{ "Charging", .Charging },
+        .{ "Binding", .Binding },
+        .{ "Invulnerable", .Invulnerable },
+        .{ "Confusion", .Confusion },
+        .{ "Mist", .Mist },
+        .{ "FocusEnergy", .FocusEnergy },
+        .{ "Substitute", .Substitute },
+        .{ "Recharging", .Recharging },
+        .{ "Rage", .Rage },
+        .{ "LeechSeed", .LeechSeed },
+        .{ "Toxic", .Toxic },
+        .{ "LightScreen", .LightScreen },
+        .{ "Reflect", .Reflect },
+        .{ "Transform", .Transform },
+        // ints
+        .{ "confusion", .confusion },
+        .{ "attacks", .attacks },
+        .{ "state", .state },
+        .{ "substitute", .substitute },
+        .{ "transform", .transform },
+        .{ "disable_duration", .disable_duration },
+        .{ "disable_move", .disable_move },
+        .{ "toxic", .toxic },
     });
 
-    inline for (std.meta.fields(pkmn.gen1.Volatiles)) |v| {
+    var score_sum: score_t = 0;
+
+    for (std.meta.fields(pkmn.gen1.Volatiles)) |v| {
         switch (@FieldType(pkmn.gen1.Volatiles, v.name)) {
             bool => {
                 const value: bool = @field(active.volatiles, v.name);
-                switch (volatile_map.get(value)) {
-                    .Bide => return 10,
+                if (!value) continue;
+                if (player) {
+                    switch (volatile_map.get(v.name)) {
+                        .Bide => score_sum += -100,
+                        .Thrashing => score_sum += -500,
+                        .MultiHit => score_sum += 0,
+                        .Flinch => score_sum += -200,
+                        .Charging => score_sum += -500,
+                        .Binding => score_sum += -100,
+                        .Invulnerable => score_sum += 0,
+                        .Confusion => score_sum += -100,
+                        .Mist => score_sum += 0, // Check if setup moves available
+                        .FocusEnergy => score_sum += 0,
+                        .Substitute => score_sum += 10, // Check if stall type
+                        .Recharging => score_sum += -500,
+                        .Rage => score_sum += -1000,
+                        .LeechSeed => score_sum += 0,
+                        .Toxic => score_sum += 0, // Check if sweeper
+                        .LightScreen => score_sum += bp_per_move(enemy_side.pokemon, true),
+                        .Reflect => score_sum += bp_per_move(enemy_side.pokemon, false),
+                        .Transform => score_sum += 0,
+                    }
+                } else {
+                    switch (volatile_map.get(v.name)) {
+                        .Bide => score_sum += 500,
+                        .Thrashing => score_sum += 100, // Depends on the move its thrashing on
+                        .MultiHit => score_sum += 0,
+                        .Flinch => score_sum += 100,
+                        .Charging => score_sum += 400,
+                        .Binding => score_sum += 500,
+                        .Invulnerable => score_sum += 0,
+                        .Confusion => score_sum += 200,
+                        .Mist => score_sum += 0,
+                        .FocusEnergy => score_sum += 200,
+                        .Substitute => score_sum += -100,
+                        .Recharging => score_sum += 300,
+                        .Rage => score_sum += 400, // Switch and go for one shot moves
+                        .LeechSeed => score_sum += 500,
+                        .Toxic => score_sum += 500,
+                        .LightScreen => score_sum += bp_per_move(player_side.pokemon, true) + bp_per_move(box, true),
+                        .Reflect => score_sum += bp_per_move(player_side.pokemon, false) + bp_per_move(box, false),
+                        .Transform => score_sum += 0, // Ignore ditto
+                    }
                 }
             },
             else => {
@@ -117,4 +217,25 @@ fn volatiles(side: *const pkmn.gen1.Side) score_t {
             },
         }
     }
+}
+
+fn bp_per_move(mons: []const pkmn.gen1.Pokemon, special: bool) score_t {
+    var bp_sum: usize = 0;
+    var moves_count: usize = 0;
+
+    for (mons) |mon| {
+        for (mon.moves) |move_slot| {
+            if (move_slot.id != .None) {
+                const move = pkmn.gen1.Move.get(move_slot.id);
+                if (pkmn.gen1.Type.isSpecial(move) and special) {
+                    if (move.bp > 0) {
+                        bp_sum += move.bp;
+                        moves_count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    return bp_sum / moves_count;
 }

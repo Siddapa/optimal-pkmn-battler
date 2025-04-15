@@ -187,16 +187,15 @@ pub fn display_choice(next_node: *builder.DecisionNode, comptime player: usize, 
     const side = if (player == 0) .P1 else .P2;
     switch (choice.type) {
         .Move => {
-            if (choice.data != 0) try writer.print("{s: <16}", .{@tagName(next_node.battle.side(side).stored().move(choice.data).id)});
+            if (choice.data != 0) try writer.print("{s: >16}", .{@tagName(next_node.battle.side(side).stored().move(choice.data).id)});
         },
         .Switch => {
             if (choice.data != 42) {
-                try writer.print("{s: <16}", .{@tagName(next_node.battle.side(side).stored().species)});
+                try writer.print("{s: >16}", .{@tagName(next_node.battle.side(side).stored().species)});
             }
         },
         .Pass => try writer.writeAll("Pass"),
     }
-    try writer.writeAll(", ");
 }
 
 pub fn traverse_decision_tree(
@@ -214,7 +213,7 @@ pub fn traverse_decision_tree(
         for (curr_node.team) |team_mem| {
             switch (team_mem) {
                 .Empty => try writer.writeAll("-1 "),
-                .Filled => |box_id| try writer.print("{} ", .{box_id}),
+                .Filled => |box_id| try writer.print("{s} ", .{@tagName(box[box_id].species)}),
                 .Lead => try writer.writeAll("_ "),
             }
         }
@@ -225,33 +224,38 @@ pub fn traverse_decision_tree(
 
         // Displays possible moves/switches as well as traversing to previous nodes/quitting
         try writer.writeAll("Select one of the following choices: \n");
+        try writer.writeAll("T ID |         P Choice |         E Choice |     Score | Next # of Transitions | Actions\n");
+        try writer.writeAll("-" ** 50);
+        try writer.writeAll("\n");
         std.mem.sort(*builder.DecisionNode, curr_node.transitions.items, {}, builder.compare_score);
         for (curr_node.transitions.items, 0..) |next_node, i| {
             const next_node_transitions = next_node.transitions.items.len;
 
-            try writer.print("{:02}=", .{
+            try writer.print("{:>04}", .{
                 i + 1,
             });
+            try writer.writeAll("   ");
 
             try display_choice(next_node, 0, writer);
+            try writer.writeAll("   ");
             try display_choice(next_node, 1, writer);
+            try writer.writeAll("   ");
 
-            try writer.print("{d:06.4}, {:02}, ", .{
+            try writer.print("{d: >6.4}   {: >21}, ", .{
                 next_node.score,
-                // next_node.probability,
                 next_node_transitions,
             });
+            try writer.writeAll("   ");
 
-            try writer.print(" {}, ", .{next_node.chance.actions});
+            try writer.print("{}", .{next_node.chance.actions});
 
             try writer.writeAll("\n");
         }
 
         if (curr_node.prev_node) |_| {
-            try writer.writeAll("p=previous turn, e=exhaust_node, q=quit\n");
-        } else {
-            try writer.writeAll("e=exhaust_node, q=quit\n");
+            try writer.writeAll("p=previous turn, ");
         }
+        try writer.writeAll("e=exhaust_node, r=back_to_root, q=quit\n");
 
         // Takes a single character (u8) for processing next node to follow
         var input_buf: [10]u8 = undefined;
@@ -270,6 +274,8 @@ pub fn traverse_decision_tree(
                 }
             } else if (user_input[0] == 'c') {
                 curr_node = curr_node.transitions.items[0];
+            } else if (user_input[0] == 'r') {
+                curr_node = start_node;
             } else if (user_input[0] == 'p') {
                 curr_node = curr_node.prev_node.?;
             } else if (user_input[0] == 'e') {
@@ -279,8 +285,7 @@ pub fn traverse_decision_tree(
             } else if (user_input[0] == 'q') {
                 break;
             } else {
-                try writer.writeAll("Invalid input!\n");
-                break;
+                try writer.writeAll("Invalid input, try again!\n");
             }
         } else {
             try writer.writeAll("Failed to read line!\n");

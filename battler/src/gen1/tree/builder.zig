@@ -10,10 +10,10 @@ pub const scorer = @import("scorer.zig");
 pub const score_t = f32;
 
 // Maximum number of levels to build tree to
-const MAX_TURNLEVEL: u16 = 15;
+const MAX_TURNLEVEL: u16 = 3;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 3;
+const LOOKAHEAD: u4 = 2;
 
 // Maximum number of nodes to optimize for at a given level
 const K_LARGEST: u16 = 1;
@@ -216,7 +216,7 @@ pub fn exhaustive_decision_tree(
                             .battle = new_update.battle,
                             .team = curr_node.team,
                             .result = new_update.result,
-                            .score = try scorer.score_node(child_node, new_update.probability),
+                            .score = try scorer.score_node(child_node, box, new_update.probability),
                             .transitions = std.ArrayList(*DecisionNode).init(alloc),
                             .choices = .{ player_choice, enemy_choice },
                             .chance = .{
@@ -273,7 +273,7 @@ pub fn exhaustive_decision_tree(
                                         .battle = new_update.battle,
                                         .team = new_team,
                                         .result = new_update.result,
-                                        .score = try scorer.score_node(child_node, new_update.probability),
+                                        .score = try scorer.score_node(child_node, box, new_update.probability),
                                         .transitions = std.ArrayList(*DecisionNode).init(alloc),
                                         .choices = .{ switch_choice, enemy_choice },
                                         .chance = .{
