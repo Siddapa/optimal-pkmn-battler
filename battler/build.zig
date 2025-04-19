@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) !void {
 
     const default_options = b.standardTargetOptions(.{});
 
-    const wasm_source = try std.fmt.allocPrint(alloc, "src/{s}/wasm/runners.zig", .{generation});
+    const wasm_source = try std.fmt.allocPrint(alloc, "src/{s}/wasm/exports.zig", .{generation});
     defer alloc.free(wasm_source);
     const wasm = b.addExecutable(.{
         .name = generation,

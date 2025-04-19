@@ -1,7 +1,7 @@
 <script>
     import { onMount } from "svelte";
     import { DataSet, Network } from "vis-network/standalone";
-    import { wasmExports } from '../stores.js';
+    import { wasmWorker } from '../stores.js';
 
     let treeRoot;
 
@@ -9,18 +9,6 @@
     var nodes = new DataSet([]);
     var edges = new DataSet([]);
     let graphID = 0;
-
-    async function fetchString(strLength) {
-        $wasmExports.memory().then((memory) => {
-            const outputView = new Uint8Array(memory.buffer, 0, strLength);
-            return new TextDecoder().decode(outputView);
-        });
-        
-    }
-
-    async function fetchArray(arrLength) {
-        return new Int8Array($wasmExports.memory.buffer, 0, arrLength);
-    }
 
     function initGraph() {
         var container = document.getElementById("decisionGraph");
@@ -53,20 +41,14 @@
         edges.clear();
         network.redraw();
 
-        // console.log($wasmExports);
-        // console.log(typeof $wasmExports.memory);
-        // $wasmExports.memory().then((result) => console.log(result.buffer));
-        // console.log(await $wasmExports.test_int());
-        // console.log(fetchString(await $wasmExports.test_string(0)));
+        $wasmWorker.exports.generateOptimizedDecisionTree(0).then((result) => {
+            console.log(result);
 
-        // $wasmExports.generateOptimizedDecisionTree(0).then((result) => {
-        //     console.log(result);
-
-        //     treeRoot = result;
-        //     populateDecisionGraph(treeRoot, 0);
-        // 
-        //     network.redraw();
-        // });
+            treeRoot = result;
+            populateDecisionGraph(treeRoot, 0);
+        
+            network.redraw();
+        });
     }
 
     const populateDecisionGraph = async (treeNode, depth) => {
@@ -74,9 +56,9 @@
 
         var bkgdColor = "#00FF00";
 
-        // $wasmExports.getResult(treeNode).then((result) => {
-        //     $wasmExports.getHP(treeNode, true).then((playerHP) => {
-        //         $wasmExports.getHP(treeNode, false).then((enemyHP) => {
+        // $wasmWorker.exports.getResult(treeNode).then((result) => {
+        //     $wasmWorker.exports.getHP(treeNode, true).then((playerHP) => {
+        //         $wasmWorker.exports.getHP(treeNode, false).then((enemyHP) => {
         //             if (result != 1) {
         //                 bkgdColor = "#0000FF";
         //             } else if (playerHP == 0 || enemyHP == 0) {
@@ -86,9 +68,9 @@
         //     });
         // });
 
-        if (await $wasmExports.getResult(treeNode) != 1) {
+        if (await $wasmWorker.exports.getResult(treeNode) != 1) {
             bkgdColor = "#0000FF"
-        } else if (await $wasmExports.getHP(treeNode, true) == 0 || await $wasmExports.getHP(treeNode, false) == 0) {
+        } else if (await $wasmWorker.exports.getHP(treeNode, true) == 0 || await $wasmWorker.exports.getHP(treeNode, false) == 0) {
             bkgdColor = "#FF0000"
         }
         
@@ -103,9 +85,9 @@
         }]);
         graphID += 1;
 
-        // $wasmExports.getNumOfNextTurns(treeNode).then((numOfNextTurns) => {
+        // $wasmWorker.exports.getNumOfNextTurns(treeNode).then((numOfNextTurns) => {
         //     for (let i = 0; i < numOfNextTurns; i++) {
-        //         $wasmExports.getNextNode(treeNode, i).then((nextNode) => {
+        //         $wasmWorker.exports.getNextNode(treeNode, i).then((nextNode) => {
         //             if (nextNode != 0) { // 0 pointers are null decision nodes
         //                 const childNodeID = populateDecisionGraph(nextNode, depth + 1);
         //                 edges.add([{
@@ -125,9 +107,9 @@
         //     }
         // });
 
-        const numOfNextTurns = await $wasmExports.getNumOfNextTurns(treeNode);
+        const numOfNextTurns = await $wasmWorker.exports.getNumOfNextTurns(treeNode);
         for (let i = 0; i < numOfNextTurns; i++) {
-            const nextNode = await $wasmExports.getNextNode(treeNode, i);
+            const nextNode = await $wasmWorker.exports.getNextNode(treeNode, i);
             if (nextNode != 0) { // 0 pointers are null decision nodes
                 const childNodeID = await populateDecisionGraph(nextNode, depth + 1);
                 edges.add([{
@@ -149,17 +131,15 @@
     }
 
     async function graphEdgeLabel(treeNode, index) {
-        return fetchString(await $wasmExports.getTransitionChoice(treeNode, index, true, 0)) + "\n" + fetchString(await $wasmExports.getTransitionChoice(treeNode, index, false, 0));
+        return $wasmWorker.exports.getTransitionChoice(treeNode, index, true, 0) + "\n" + await $wasmWorker.exports.getTransitionChoice(treeNode, index, false, 0);
     }
 
     async function graphNodeLabel(treeNode, depth) {
-        return fetchString(await $wasmExports.getSpecies(treeNode, true, 0)) + " (" + String(await $wasmExports.getHP(treeNode, true)) + ")" +
+        return await $wasmWorker.exports.getSpecies(treeNode, true, 0) + " (" + String(await $wasmWorker.exports.getHP(treeNode, true)) + ")" +
                '\nvs\n' + 
-               fetchString(await $wasmExports.getSpecies(treeNode, false, 0)) + " (" + String(await $wasmExports.getHP(treeNode, false)) + ")" + 
+               await $wasmWorker.exports.getSpecies(treeNode, false, 0) + " (" + String(await $wasmWorker.exports.getHP(treeNode, false)) + ")" + 
                '\n' + 
-               fetchArray(await $wasmExports.getTeam(treeNode, 0)) + 
-               '\n' + 
-               await $wasmExports.getScore(treeNode);
+               await $wasmWorker.exports.getScore(treeNode);
     }
 
     onMount(() => {

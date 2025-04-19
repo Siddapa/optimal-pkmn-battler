@@ -65,7 +65,7 @@ Goldeen
 </div>
 
 <script>
-    import { wasmExports, playerBox, enemyBox } from '../stores.js';
+    import { wasmWorker, playerBox, enemyBox } from '../stores.js';
 
     let playerImport;
     let playerFormat;
@@ -75,7 +75,7 @@ Goldeen
     let invalidEnemyImports = $state([]);
 
     const submitImport = async () => {
-        await $wasmExports.clear();
+        await $wasmWorker.exports.clear();
         if (playerImport.value != "") {
             if (playerFormat.value == "Normal") {
                 $playerBox = [];
@@ -112,10 +112,11 @@ Goldeen
 
         
         for (const pokemon of $playerBox) {
-            await $wasmExports.importPokemon(pokemon, true);
+            console.log(pokemon);
+            await $wasmWorker.exports.importPokemon(JSON.stringify(pokemon), 1);
         }
         for (const pokemon of $enemyBox) {
-            await $wasmExports.importPokemon(pokemon, false);
+            await $wasmWorker.exports.importPokemon(JSON.stringify(pokemon), 0);
         }
     }
 
@@ -141,7 +142,6 @@ Goldeen
                 "spe": base_exp
             },
             "moves": ["", "", "", ""],
-            "bkg-color": 'none',
         };
         var moveID = 0;
         for (let i = 0; i < numOfLines; i++) {
@@ -206,6 +206,7 @@ Goldeen
     }
 
     async function validateBox(pokemon) {
+        // TODO Separate .then's into separate variables
         const contentType = await fetch("sprites/gen1/" + pokemon['species'].toLowerCase().trim() + ".PNG")
                                   .then((response) => Object.fromEntries(response.headers))
                                   .then((headers) => headers["content-type"]);

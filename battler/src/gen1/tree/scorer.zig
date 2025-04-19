@@ -10,6 +10,7 @@ pub const NTN = struct {};
 pub const Side = struct {};
 
 pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.gen1.Pokemon, probability: builder.score_t) !score_t {
+    _ = box;
     const battle = scoring_node.battle;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);
@@ -26,8 +27,8 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.g
             score += 2 * status(enemy_side);
             score -= 2 * status(player_side);
 
-            score += 1 * volatiles(&battle, box, false);
-            score += 1 * volatiles(&battle, box, true);
+            // score += 1 * volatiles(&battle, box, false);
+            // score += 1 * volatiles(&battle, box, true);
 
             if (probability < 1e-3) {
                 score += 1000000 * probability;

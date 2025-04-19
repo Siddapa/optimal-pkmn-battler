@@ -15,7 +15,7 @@
     "vite-plugin-cross-origin-isolation": "^0.1.6"
   },
   "dependencies": {
-    "@runno/wasi": "^0.7.0",
+    "@runno/wasi": "file:../../runno/packages/wasi/",
     "vis-network": "^9.1.9",
     "vite-plugin-top-level-await": "^1.4.4",
     "wasi-js": "^1.7.3"
