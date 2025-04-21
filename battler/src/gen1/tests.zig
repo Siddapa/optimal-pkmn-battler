@@ -7,7 +7,7 @@ var alloc = std.heap.smp_allocator;
 
 const pkmn = @import("pkmn");
 
-const builder = @import("tree");
+const builder = @import("builder");
 const enemy_ai = builder.enemy_ai;
 const tools = builder.tools;
 

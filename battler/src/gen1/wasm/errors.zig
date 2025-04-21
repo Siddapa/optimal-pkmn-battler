@@ -4,7 +4,7 @@ pub const Errors = error{
     TypeMismatch,
     TooManyEnemies,
     OutOfMemory,
-    TypeWithUnkownTag,
+    TypeWithUnknownTag,
 };
 
 pub fn to_value(e: anyerror) error_t {
@@ -12,7 +12,7 @@ pub fn to_value(e: anyerror) error_t {
         Errors.TypeMismatch => return 2,
         Errors.TooManyEnemies => return 3,
         Errors.OutOfMemory => return 4,
-        Errors.TypeWithUnkownTag => return 5,
+        Errors.TypeWithUnknownTag => return 5,
         else => return 1, // Unhandled error
     }
 }
