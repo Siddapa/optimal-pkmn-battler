@@ -9,6 +9,7 @@ const Errors = @import("errors.zig").Errors;
 // Start at 0x8 for 8 byte alignment for largest type (u64)
 const buf_beg: usize = 0x8;
 const wasm_buf: [*]u8 = @ptrFromInt(buf_beg);
+const wasm_buf_i8: [*]i8 = @ptrFromInt(buf_beg);
 
 const tag_t = i8;
 
@@ -29,15 +30,14 @@ pub const WASMArg = union(WASM_t) {
 };
 
 pub fn load(
-    comptime arg_count: usize,
-    args: *[arg_count]WASMArg,
-    types: [arg_count]WASM_t,
+    args: []WASMArg,
+    types: []const WASM_t,
     alloc: std.mem.Allocator,
 ) Errors!void {
+    std.debug.assert(args.len == types.len);
     var memory_i: usize = 0;
-    for (0..arg_count) |arg_i| {
+    for (0..args.len) |arg_i| {
         const tag: tag_t = load_field(tag_t, memory_i);
-        print("tag: {}\n", .{tag});
         memory_i += 1;
         switch (tag) {
             1 => {
@@ -99,7 +99,7 @@ pub fn load(
         }
     }
     // Wipe the buffer for storing after export call
-    @memset(wasm_buf[0..memory_i], 0);
+    @memset(wasm_buf_i8[0..memory_i], -1);
 }
 
 fn load_field(comptime T: type, memory_i: usize) T {

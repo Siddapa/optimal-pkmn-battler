@@ -10,13 +10,13 @@ pub const scorer = @import("scorer.zig");
 pub const score_t = f32;
 
 // Maximum number of levels to build tree to
-const MAX_TURNLEVEL: u16 = 3;
+const MAX_TURNLEVEL: u16 = 50;
 
 // Number of levels to extend tree by at some node
-const LOOKAHEAD: u4 = 2;
+const LOOKAHEAD: u4 = 1;
 
 // Maximum number of nodes to optimize for at a given level
-const K_LARGEST: u16 = 1;
+const K_LARGEST: u16 = 20;
 
 // floatMin() provides smallest POSITIVE float which messes with @min()
 // Arbitrary min value that could fail
@@ -117,7 +117,10 @@ pub fn optimal_decision_tree(
                         std.math.floatMax(score_t),
                         alloc,
                     );
-                    print("# of Nodes: {?d}, Branches Skipped: {?d}, ({}/{})\r", .{ data[2], data[3], i, scoring_nodes_len });
+                    _ = data;
+                    _ = i;
+                    _ = scoring_nodes_len;
+                    // print("# of Nodes: {?d}, Branches Skipped: {?d}, ({}/{})\r", .{ data[2], data[3], i, scoring_nodes_len });
                 }
 
                 try scored_nodes.append(scoring_node);
@@ -164,7 +167,7 @@ pub fn optimal_decision_tree(
 
         level += 1;
     }
-    print("Finished!\n", .{});
+    print("Finished: {} nodes!\n", .{count_nodes(root)});
     return root;
 }
 
@@ -208,6 +211,7 @@ pub fn exhaustive_decision_tree(
             for (player_valid_choices) |player_choice| {
                 // TODO Check alpha/beta prior to transition creation to optimize further
                 const new_updates = try transitions(curr_node.battle, player_choice, enemy_choice, curr_node.chance.durations, alloc);
+                try curr_node.transitions.ensureTotalCapacity(new_updates.len);
                 for (new_updates) |new_update| {
                     if (alpha < beta or !PRUNING) {
                         const child_node: *DecisionNode = try alloc.create(DecisionNode);
@@ -265,6 +269,7 @@ pub fn exhaustive_decision_tree(
                             new_team[new_member_slot] = TeamSlotState{ .Filled = @intCast(box_index) };
 
                             const new_updates = try transitions(next_battle, switch_choice, enemy_choice, curr_node.chance.durations, alloc);
+                            try curr_node.transitions.ensureTotalCapacity(new_updates.len);
                             for (new_updates) |new_update| {
                                 if (alpha < beta or !PRUNING) {
                                     const child_node: *DecisionNode = try alloc.create(DecisionNode);

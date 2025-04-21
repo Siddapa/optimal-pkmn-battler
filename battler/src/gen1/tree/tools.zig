@@ -35,7 +35,7 @@ pub fn init_battle(team1: []const Pokemon, team2: []const Pokemon) pkmn.gen1.Bat
 
     // const curr_time = @as(u64, @bitCast(std.time.milliTimestamp()));
     // TODO Deterministic transitions still influenced by seed
-    var prng = (if (@hasDecl(std, "Random")) std.Random else std.rand).DefaultPrng.init(1234);
+    var prng = std.Random.DefaultPrng.init(1234);
     var random = prng.random();
 
     const battle = pkmn.gen1.helpers.Battle.init(

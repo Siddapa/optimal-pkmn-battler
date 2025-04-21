@@ -7,7 +7,7 @@ pub const Errors = error{
     TypeWithUnkownTag,
 };
 
-pub fn e_to_v(e: anyerror) error_t {
+pub fn to_value(e: anyerror) error_t {
     switch (e) {
         Errors.TypeMismatch => return 2,
         Errors.TooManyEnemies => return 3,

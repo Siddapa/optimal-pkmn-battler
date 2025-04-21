@@ -42,16 +42,10 @@
                         err_message = "";
                         break;
                 };
-                if (err_message != "") console.log("stderr", err_message);
+                if (err_message != "") throw new Error(err_message);
             },
         );
-
         await $wasmWorker.initialize();
-        console.log($wasmWorker.exports);
-
-        const args = await $wasmWorker.exports.test_memory(new Int32(-1), new Uint32(1), "passing", new Int32Array([-1, -1, -1]), new Uint32Array([1, 1, 1]));
-        console.log(args);
-
         await $wasmWorker.exports.init();
     })
 </script>
@@ -80,11 +74,11 @@
 <style>
     .container {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        grid-template-rows: repeat(2, 1fr);
+        grid-template-columns: repeat(fit-content(100%), 1fr);
+        grid-template-rows: repeat(fit-content(100%), 1fr);
         padding-top: 0px;
         padding-side: 0px;
-        grid-column-gap: 20px;
+        grid-column-gap: 4em;
         grid-row-gap: 0px;
     }
     

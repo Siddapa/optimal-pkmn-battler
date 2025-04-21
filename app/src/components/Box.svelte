@@ -23,17 +23,15 @@
 <style>
     .box-container {
         display: grid;
-        grid-template-columns: auto auto auto auto auto auto;
-        overflow-y: auto;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: fit-content(100%);
+        grid-row-gap: 1em;
         overflow-x: hidden;
-        height: 300px;
-        width: 200px;
+        height: 30em;
+        width: 20em;
         background-image: url("backgrounds/beach.png");
         background-size: cover;
         border: 2px solid white;
-        grid-row-gap: 10px;
-        grid-column-gap: 10px;
-        padding: 5px;
     }
 
     .box-mon {

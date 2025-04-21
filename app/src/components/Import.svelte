@@ -1,14 +1,18 @@
 <div>
     <h3>Import</h3>
 
-    <div class="imports-container">
-        <div class="import">
-            <select bind:this={playerFormat}>
-                <option value="Normal">Normal</option>
-                <option value="Packed">Packed</option>
-                <option value="JSON">JSON</option>
-            </select>
-            <textarea class="import-input" rows="15" cols="12" bind:this={playerImport}>Articuno
+    <div class="imports">
+        <select class="format-selector" bind:this={playerFormat}>
+            <option value="Normal">Normal</option>
+            <option value="Packed">Packed</option>
+            <option value="JSON">JSON</option>
+        </select>
+        <select class="format-selector" bind:this={enemyFormat}>
+            <option value="Normal">Normal</option>
+            <option value="Packed">Packed</option>
+            <option value="JSON">JSON</option>
+        </select>
+        <textarea class="import-input" bind:this={playerImport}>Articuno
 - Ice Beam
 - Growl
 - Tackle
@@ -25,19 +29,7 @@ Rhyhorn
 - Mist
 - Water Gun
 - Psybeam</textarea>
-            <br>
-            {#each invalidPlayerImports as alert}
-                <span class="invalid-import">{alert['species']} is not within this generation!</span>
-                <br>
-            {/each}
-        </div>
-        <div class="import">
-            <select bind:this={enemyFormat}>
-                <option value="Normal">Normal</option>
-                <option value="Packed">Packed</option>
-                <option value="JSON">JSON</option>
-            </select>
-            <textarea class="import-input" rows="15" cols="10" bind:this={enemyImport}>Jynx
+        <textarea class="import-input" bind:this={enemyImport}>Jynx
 - Aurora Beam
 - Hyper Beam
 - Blizzard
@@ -54,17 +46,24 @@ Goldeen
 - SolarBeam
 - Poison Powder
 - Fire Spin</textarea>
-            <br>
-            {#each invalidEnemyImports as alert}
-                <span class="invalid-import">{alert['species']} is not within this generation!</span>
-                <br>
-            {/each}
-        </div>
     </div>
     <input type="submit" value="Import Boxes" onclick={submitImport}>
+    <div class = "invalid-import">
+        {#each invalidPlayerImports as alert}
+            <span class="invalid-import">{alert['species']} is not within this generation!</span>
+            <br>
+        {/each}
+    </div>
+    <div clas="invalid-import">
+        {#each invalidEnemyImports as alert}
+            <span class="invalid-import">{alert['species']} is not within this generation!</span>
+            <br>
+        {/each}
+    </div>
 </div>
 
 <script>
+    import { Uint32 } from '@runno/wasi';
     import { wasmWorker, playerBox, enemyBox } from '../stores.js';
 
     let playerImport;
@@ -112,11 +111,10 @@ Goldeen
 
         
         for (const pokemon of $playerBox) {
-            console.log(pokemon);
-            await $wasmWorker.exports.importPokemon(JSON.stringify(pokemon), 1);
+            await $wasmWorker.exports.importPokemon(JSON.stringify(pokemon), new Uint32(1));
         }
         for (const pokemon of $enemyBox) {
-            await $wasmWorker.exports.importPokemon(JSON.stringify(pokemon), 0);
+            await $wasmWorker.exports.importPokemon(JSON.stringify(pokemon), new Uint32(0));
         }
     }
 
@@ -125,7 +123,7 @@ Goldeen
         const numOfLines = lines.length;
         var box = [];
         const base_dv = 15;
-        const base_exp = 65535;
+        const base_exp = 0xFFFF;
         var newPokemon = {
             "species": "",
             "dvs": {
@@ -149,7 +147,7 @@ Goldeen
 
             const species_item = line.match(/^([\'\w\s-]+)/);
             const ivs = line.match(/IVs: (.+)/);
-            const evs = line.match(/EVs: (.+)/);
+            const exp = line.match(/EXP: (.+)/);
             const move = line.match(/- ([\w\s-]+)/);
 
             if (ivs) {
@@ -159,12 +157,12 @@ Goldeen
                     const name = stat[2];
                     newPokemon["dvs"][name.toLowerCase()] = Number(value);
                 }
-            } else if (evs) {
-                const stats = evs[1].matchAll(/(\d+) (\w+)/g);
+            } else if (exp) {
+                const stats = exp[1].matchAll(/(\d+) (\w+)/g);
                 for (const stat of stats) {
                     const value = stat[1];
                     const name = stat[2];
-                    newPokemon["evs"][name.toLowerCase()] = Number(value);
+                    newPokemon["exp"][name.toLowerCase()] = Number(value);
                 }
             } else if (move) {
                 newPokemon["moves"][moveID] = move[1].trim();
@@ -219,19 +217,24 @@ Goldeen
 </script>
 
 <style>
-    .imports-container {
-        display: flex;
-        flex-direction: row;
-        column-gap: 5px;
+    .imports {
         width: fit-content;
+        height: fit-content;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(2, fit-content(100%));
+        grid-column-gap: 1em;
+        grid-row-gap: 0em;
     }
-    .import {
-        width: fit-content;
-        grid-area: 1 / 1 / 2 / 2;
+
+    .format-selector {
+        width: 5em;
+        height: 2em;
     }
 
     .import-input {
-        resize: none;
+        width: 10em;
+        height: 20em;
     }
 
     .invalid-import {

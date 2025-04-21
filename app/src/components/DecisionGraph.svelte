@@ -1,14 +1,39 @@
+<div>
+    <h3>Decision Tree</h3>
+    <div class="generate-settings">
+        <input class="button" type="button" value="Generate Tree" on:click={updateGraph}/>
+        <span class="status">{gs_state}</span>
+    </div>
+    <br>
+    <br>
+    <div id="decisionGraph"></div>
+</div>
+
+
 <script>
     import { onMount } from "svelte";
+    import { Uint32 } from "@runno/wasi";
     import { DataSet, Network } from "vis-network/standalone";
-    import { wasmWorker } from '../stores.js';
+    import { wasmWorker, playerBox, enemyBox } from '../stores.js';
 
     let treeRoot;
 
     let network;
     var nodes = new DataSet([]);
     var edges = new DataSet([]);
-    let graphID = 0;
+    var nodes_buffer = [];
+    var edges_buffer = [];
+    let graph_id = 0;
+
+    let gs_state = $state("");
+
+    onMount(() => {
+        initGraph();
+    });
+
+    function update_gs(...states) {
+        gs_states = states;
+    }
 
     function initGraph() {
         var container = document.getElementById("decisionGraph");
@@ -20,13 +45,14 @@
             layout: {
                 hierarchical: {
                     direction: "UD",
-                    levelSeparation: 300,
-                    nodeSpacing: 300,
+                    levelSeparation: 500,
+                    nodeSpacing: 500,
                 },
             },
             physics: {
-                "enabled": false,
+                "enabled": true,
                 barnesHut: {
+                    springConstant: 0,
                     avoidOverlap: 0.5,
                 }
             },
@@ -37,126 +63,112 @@
     }
 
     const updateGraph = async () => {
+        if ($playerBox.length == 0) {
+            gs_state = "Import some pokemon for the player first!";
+            return;
+        } else if ($enemyBox.length == 0) {
+            gs_state = "Import some pokemon for the enemy first!";
+            return;
+        }
+
         nodes.clear();
         edges.clear();
         network.redraw();
 
-        $wasmWorker.exports.generateOptimizedDecisionTree(0).then((result) => {
-            console.log(result);
+        gs_state = "Calculating optimal line...";
 
-            treeRoot = result;
-            populateDecisionGraph(treeRoot, 0);
+        $wasmWorker.exports.generateOptimizedDecisionTree(new Uint32(0)).then(async (result) => {
+            [treeRoot] = result;
+            nodes_buffer = [];
+            edges_buffer = [];
+
+            gs_state = "Fetching tree...";
+
+            await populateDecisionGraph(treeRoot, 0);
+            graph_id = 0;
+
+            gs_state = "Rendering graph...";
         
+            nodes.add(nodes_buffer);
+            edges.add(edges_buffer);
             network.redraw();
+            network.moveTo({scale: 0.3, animation: {duration: 5000, easingFunction: "easeInCubic"}});
+
+            gs_state = "Finished!";
         });
     }
 
     const populateDecisionGraph = async (treeNode, depth) => {
-        const currNodeID = graphID;
+        console.log(graph_id);
+        // Fetching node data is the longest part of building the graph
+        // DON'T separate out the calls, instead do one bulk read
+        // Ideally, we're able to dump the whole tree and read it all at once
+        const [score, result, player_lead_name, player_lead_hp, player_choice, enemy_lead_name, enemy_lead_hp, enemy_choice, next_nodes] = await $wasmWorker.exports.getNodeData(new Uint32(treeNode));
 
         var bkgdColor = "#00FF00";
-
-        // $wasmWorker.exports.getResult(treeNode).then((result) => {
-        //     $wasmWorker.exports.getHP(treeNode, true).then((playerHP) => {
-        //         $wasmWorker.exports.getHP(treeNode, false).then((enemyHP) => {
-        //             if (result != 1) {
-        //                 bkgdColor = "#0000FF";
-        //             } else if (playerHP == 0 || enemyHP == 0) {
-        //                 bkgdColor = "#FF0000";
-        //             }
-        //         });
-        //     });
-        // });
-
-        if (await $wasmWorker.exports.getResult(treeNode) != 1) {
-            bkgdColor = "#0000FF"
-        } else if (await $wasmWorker.exports.getHP(treeNode, true) == 0 || await $wasmWorker.exports.getHP(treeNode, false) == 0) {
+        if (result != 1) {
+            bkgdColor = "#ADD8E6"
+        } else if (player_lead_hp == 0 || enemy_lead_hp == 0) {
             bkgdColor = "#FF0000"
         }
         
-        nodes.add([{
-            id: currNodeID, 
+        const curr_id = graph_id;
+        nodes_buffer.push({
+            id: graph_id,
             level: depth, 
-            label: graphNodeLabel(treeNode, depth), 
+            label: `${player_lead_name} (${player_lead_hp})\nvs\n${enemy_lead_name} (${enemy_lead_hp})\n${score}`, 
             color: {
                 background: bkgdColor
             },
             treeNode: treeNode
-        }]);
-        graphID += 1;
+        });
+        graph_id += 1;
 
-        // $wasmWorker.exports.getNumOfNextTurns(treeNode).then((numOfNextTurns) => {
-        //     for (let i = 0; i < numOfNextTurns; i++) {
-        //         $wasmWorker.exports.getNextNode(treeNode, i).then((nextNode) => {
-        //             if (nextNode != 0) { // 0 pointers are null decision nodes
-        //                 const childNodeID = populateDecisionGraph(nextNode, depth + 1);
-        //                 edges.add([{
-        //                     from: currNodeID, 
-        //                     to: childNodeID, 
-        //                     label: graphEdgeLabel(treeNode, i),
-        //                     font: {
-        //                         face: "Arial", 
-        //                         color: "blue", 
-        //                         size: 15
-        //                     },
-        //                     shadow: false,
-        //                     arrows: "to"
-        //                 }])
-        //             }
-        //         });
-        //     }
-        // });
-
-        const numOfNextTurns = await $wasmWorker.exports.getNumOfNextTurns(treeNode);
-        for (let i = 0; i < numOfNextTurns; i++) {
-            const nextNode = await $wasmWorker.exports.getNextNode(treeNode, i);
-            if (nextNode != 0) { // 0 pointers are null decision nodes
-                const childNodeID = await populateDecisionGraph(nextNode, depth + 1);
-                edges.add([{
-                    from: currNodeID, 
-                    to: childNodeID, 
-                    label: graphEdgeLabel(treeNode, i),
-                    font: {
-                        face: "Arial", 
-                        color: "blue", 
-                        size: 15
-                    },
-                    shadow: false,
-                    arrows: "to"
-                }])
-            }
+        for (const next_node of next_nodes) {
+            const child_id = await populateDecisionGraph(next_node, depth + 1);
+            edges_buffer.push({
+                from: curr_id,
+                to: child_id, 
+                label: "",
+                font: {
+                    face: "Arial", 
+                    color: "blue", 
+                    size: 15
+                },
+                shadow: false,
+                arrows: "to"
+            })
         }
 
-        return currNodeID;
+        return curr_id;
     }
-
-    async function graphEdgeLabel(treeNode, index) {
-        return $wasmWorker.exports.getTransitionChoice(treeNode, index, true, 0) + "\n" + await $wasmWorker.exports.getTransitionChoice(treeNode, index, false, 0);
-    }
-
-    async function graphNodeLabel(treeNode, depth) {
-        return await $wasmWorker.exports.getSpecies(treeNode, true, 0) + " (" + String(await $wasmWorker.exports.getHP(treeNode, true)) + ")" +
-               '\nvs\n' + 
-               await $wasmWorker.exports.getSpecies(treeNode, false, 0) + " (" + String(await $wasmWorker.exports.getHP(treeNode, false)) + ")" + 
-               '\n' + 
-               await $wasmWorker.exports.getScore(treeNode);
-    }
-
-    onMount(() => {
-        initGraph();
-    });
 </script>
 
-<div>
-    <h3>Decision Tree</h3>
-    <input type="button" value="Generate Tree" on:click={updateGraph}/>
-    <br>
-    <br>
-    <div id="decisionGraph"></div>
-</div>
 
 <style>
     #decisionGraph {
         border: 1px solid white;
     }
+
+    .generate-settings {
+        width: min-content;
+        height: min-content;
+        display: grid;
+        grid-template-columns: repeat(2, fit-content(100%));
+        grid-template-rows: 1fr;
+        grid-column-gap: 1em;
+        grid-row-gap: 0px;
+    }
+
+    .button {
+        width: 10em;
+        height: 2em;
+    }
+
+    .status {
+        color: lightgreen;
+        width: 30em;
+        height: 2em;
+    }
+
 </style>

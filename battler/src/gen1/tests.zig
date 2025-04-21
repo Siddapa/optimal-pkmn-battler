@@ -23,8 +23,8 @@ var options = pkmn.battle.options(
 pub fn main() !void {
     // try base_transitions();
     // try box_switch_transitions();
-    // try optimalWASM();
-    try optimal1();
+    try optimalWASM();
+    // try optimal1();
     // try exhaust_random();
     // try exhaust1();
     // try exhaust2();
@@ -325,7 +325,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, true, alloc);
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, false, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
