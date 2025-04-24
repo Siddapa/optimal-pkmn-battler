@@ -326,6 +326,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
     const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, false, alloc);
+    defer builder.free_tree(root, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
@@ -333,8 +334,6 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const num_of_nodes = builder.count_nodes(root);
     try stdout.print("Num Of Nodes: {}\n", .{num_of_nodes});
-
-    builder.free_tree(root, alloc);
 
     return end_time - start_time;
 }

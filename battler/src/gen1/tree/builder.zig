@@ -16,7 +16,7 @@ const MAX_TURNLEVEL: u16 = 50;
 const LOOKAHEAD: u4 = 1;
 
 // Maximum number of nodes to optimize for at a given level
-const K_LARGEST: u16 = 20;
+const K_LARGEST: u16 = 3;
 
 // floatMin() provides smallest POSITIVE float which messes with @min()
 // Arbitrary min value that could fail

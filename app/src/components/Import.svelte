@@ -63,8 +63,8 @@ Goldeen
 </div>
 
 <script>
-    import { Uint32 } from '@runno/wasi';
-    import { wasmWorker, playerBox, enemyBox } from '../stores.js';
+    import { Uint32 } from '../wasi/types.ts';
+    import { wasmWorker, playerBox, enemyBox } from '../stores.ts';
 
     let playerImport;
     let playerFormat;
@@ -218,8 +218,6 @@ Goldeen
 
 <style>
     .imports {
-        width: fit-content;
-        height: fit-content;
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         grid-template-rows: repeat(2, fit-content(100%));

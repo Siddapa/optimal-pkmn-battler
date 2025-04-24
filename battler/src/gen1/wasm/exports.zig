@@ -30,6 +30,10 @@ comptime {
 }
 
 export fn test_memory() errors.error_t {
+    var arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
+    const alloc = arena.allocator();
+    defer arena.deinit();
+
     var args: [5]WASMArg = undefined;
     memory.load(&args, &.{
         .Int32,
@@ -37,7 +41,7 @@ export fn test_memory() errors.error_t {
         .string,
         .Int32Array,
         .Uint32Array,
-    }, tree_prep_alloc) catch |err| return errors.to_value(err);
+    }, alloc) catch |err| return errors.to_value(err);
 
     for (args) |arg| {
         switch (arg) {
@@ -54,21 +58,21 @@ export fn test_memory() errors.error_t {
         WASMArg{ .Int32 = -2 },
         WASMArg{ .Uint32 = 2 },
         WASMArg{ .string = "returning" },
-        WASMArg{ .Int32Array = &.{ -2, -2, -2 } },
-        WASMArg{ .Uint32Array = &.{ 2, 2, 2 } },
+        WASMArg{ .Int32Array = &.{ -2, -4, -6 } },
+        WASMArg{ .Uint32Array = &.{ 2, 4, 6 } },
     };
-    _ = memory.store(&ret_vals) catch |err| return errors.to_value(err);
+    memory.store(&ret_vals) catch |err| return errors.to_value(err);
 
-    for (ret_vals) |val| {
-        switch (val) {
-            .Int32 => |*int| print("{}\n", .{int.*}),
-            .Uint32 => |*int| print("{}\n", .{int.*}),
-            .string => |*str| print("{s}\n", .{str.*}),
-            .Int32Array => |*arr| print("{any}\n", .{arr.*}),
-            .Uint32Array => |*arr| print("{any}\n", .{arr.*}),
-            .Tree => {},
-        }
-    }
+    // for (ret_vals) |val| {
+    //     switch (val) {
+    //         .Int32 => |*int| print("{}\n", .{int.*}),
+    //         .Uint32 => |*int| print("{}\n", .{int.*}),
+    //         .string => |*str| print("{s}\n", .{str.*}),
+    //         .Int32Array => |*arr| print("{any}\n", .{arr.*}),
+    //         .Uint32Array => |*arr| print("{any}\n", .{arr.*}),
+    //         .Tree => {},
+    //     }
+    // }
 
     return 0;
 }
@@ -90,8 +94,12 @@ export fn clear() errors.error_t {
 }
 
 export fn generateOptimizedDecisionTree() errors.error_t {
+    var arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
+    const alloc = arena.allocator();
+    defer arena.deinit();
+
     var args: [1]WASMArg = undefined;
-    memory.load(&args, &.{.Uint32}, tree_prep_alloc) catch |err| return errors.to_value(err);
+    memory.load(&args, &.{.Uint32}, alloc) catch |err| return errors.to_value(err);
     const lead: u8 = @intCast(args[0].Uint32);
 
     if (decision_tree_instance) |foo| builder.free_tree(foo, tree_gen_alloc);
@@ -183,19 +191,63 @@ export fn generateOptimizedDecisionTree() errors.error_t {
 
     const imm_box: []const pkmn.gen1.Pokemon = box.items;
 
-    decision_tree_instance = builder.optimal_decision_tree(battle, result, imm_box, false, tree_gen_alloc) catch |err| return errors.to_value(err);
+    decision_tree_instance = builder.optimal_decision_tree(battle, result, imm_box, true, tree_gen_alloc) catch |err| return errors.to_value(err);
 
     const ret_vals = [_]WASMArg{WASMArg{
         .Uint32 = @intFromPtr(decision_tree_instance),
     }};
-    _ = memory.store(&ret_vals) catch |err| return errors.to_value(err);
+    memory.store(&ret_vals) catch |err| return errors.to_value(err);
 
     return 0;
 }
 
-export fn getNodeData() errors.error_t {
+export fn getTreeData() errors.error_t {
+    var arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
+    const alloc = arena.allocator();
+    defer arena.deinit();
+
     var args: [1]WASMArg = undefined;
-    memory.load(&args, &.{.Uint32}, tree_prep_alloc) catch |err| return errors.to_value(err);
+    _ = memory.load(&args, &.{.Uint32}, alloc) catch |err| return errors.to_value(err);
+    const curr_node: *builder.DecisionNode = @ptrFromInt(args[0].Uint32);
+
+    const ret_vals = [_]WASMArg{
+        WASMArg{ .Tree = .{
+            .root = curr_node,
+            .data_gen = fetch_tree_data,
+        } },
+    };
+    memory.store(&ret_vals) catch |err| return errors.to_value(err);
+    return 0;
+}
+
+fn fetch_tree_data(node: *const builder.DecisionNode, alloc: std.mem.Allocator) ![]WASMArg {
+    var ret_vals = std.ArrayList(memory.WASMArg).init(alloc);
+    // Score (TODO Seems to round up negative floats to 0 even when casting to i32)
+    try ret_vals.append(WASMArg{ .Int32 = @intFromFloat(node.score) });
+    // Result
+    try ret_vals.append(WASMArg{ .string = @tagName(node.result.type) });
+    // Player Lead Name
+    try ret_vals.append(WASMArg{ .string = @tagName(node.battle.side(.P1).stored().species) });
+    // Player Lead HP
+    try ret_vals.append(WASMArg{ .Uint32 = node.battle.side(.P1).stored().hp });
+    // Player Choice
+    try ret_vals.append(WASMArg{ .string = @tagName(node.choices[0].type) });
+    // Enemy Lead Name
+    try ret_vals.append(WASMArg{ .string = @tagName(node.battle.side(.P2).stored().species) });
+    // Enemy Lead HP
+    try ret_vals.append(WASMArg{ .Uint32 = node.battle.side(.P2).stored().hp });
+    // Enemy Choice
+    try ret_vals.append(WASMArg{ .string = @tagName(node.choices[1].type) });
+    return ret_vals.toOwnedSlice();
+}
+
+export fn getNodeData() errors.error_t {
+    var arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
+    const alloc = arena.allocator();
+    defer arena.deinit();
+
+    var args: [1]WASMArg = undefined;
+    memory.load(&args, &.{.Uint32}, alloc) catch |err| return errors.to_value(err);
     const curr_node: *builder.DecisionNode = @ptrFromInt(args[0].Uint32);
 
     var node_ptr_values = std.ArrayList(u32).init(tree_prep_alloc);
@@ -215,7 +267,7 @@ export fn getNodeData() errors.error_t {
         WASMArg{ .string = @tagName(curr_node.choices[1].type) },
         WASMArg{ .Uint32Array = node_ptr_values.items },
     };
-    _ = memory.store(&ret_vals) catch |err| return errors.to_value(err);
+    memory.store(&ret_vals) catch |err| return errors.to_value(err);
     return 0;
 }
 

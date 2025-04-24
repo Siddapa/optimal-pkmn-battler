@@ -10,13 +10,13 @@
 </div>
 
 
-<script>
+<script lang="ts">
     import { onMount } from "svelte";
-    import { Uint32 } from "@runno/wasi";
+    import { Uint32 } from "../wasi/types.ts";
     import { DataSet, Network } from "vis-network/standalone";
-    import { wasmWorker, playerBox, enemyBox } from '../stores.js';
+    import { wasmWorker, playerBox, enemyBox } from '../stores.ts';
 
-    let treeRoot;
+    let tree_root;
 
     let network;
     var nodes = new DataSet([]);
@@ -45,19 +45,19 @@
             layout: {
                 hierarchical: {
                     direction: "UD",
-                    levelSeparation: 500,
-                    nodeSpacing: 500,
+                    levelSeparation: 200,
+                    nodeSpacing: 250,
                 },
             },
             physics: {
-                "enabled": true,
+                "enabled": false,
                 barnesHut: {
                     springConstant: 0,
-                    avoidOverlap: 0.5,
+                    avoidOverlap: 1,
                 }
             },
-            width: "1000px",
-            height: "300px",
+            width: "100%",
+            height: "100%",
         };
         network = new Network(container, data, options);
     }
@@ -78,32 +78,37 @@
         gs_state = "Calculating optimal line...";
 
         $wasmWorker.exports.generateOptimizedDecisionTree(new Uint32(0)).then(async (result) => {
-            [treeRoot] = result;
-            nodes_buffer = [];
-            edges_buffer = [];
+            [tree_root] = result;
 
             gs_state = "Fetching tree...";
+            const [tree_data] = await $wasmWorker.exports.getTreeData(new Uint32(tree_root));
+            console.log(tree_data);
 
-            await populateDecisionGraph(treeRoot, 0);
-            graph_id = 0;
+            gs_state = "Populating graph...";
+            await populateDecisionGraph(tree_data, 0);
 
             gs_state = "Rendering graph...";
-        
             nodes.add(nodes_buffer);
             edges.add(edges_buffer);
             network.redraw();
             network.moveTo({scale: 0.3, animation: {duration: 5000, easingFunction: "easeInCubic"}});
 
             gs_state = "Finished!";
+            graph_id = 0;
+            nodes_buffer = [];
+            edges_buffer = [];
         });
     }
 
-    const populateDecisionGraph = async (treeNode, depth) => {
-        console.log(graph_id);
-        // Fetching node data is the longest part of building the graph
-        // DON'T separate out the calls, instead do one bulk read
-        // Ideally, we're able to dump the whole tree and read it all at once
-        const [score, result, player_lead_name, player_lead_hp, player_choice, enemy_lead_name, enemy_lead_hp, enemy_choice, next_nodes] = await $wasmWorker.exports.getNodeData(new Uint32(treeNode));
+    const populateDecisionGraph = async (tree_data, depth) => {
+        const score = tree_data['data'][0];
+        const result = tree_data['data'][1];
+        const player_lead_name = tree_data['data'][2];
+        const player_lead_hp = tree_data['data'][3];
+        const player_choice = tree_data['data'][4];
+        const enemy_lead_name = tree_data['data'][5];
+        const enemy_lead_hp = tree_data['data'][6];
+        const enemy_choice = tree_data['data'][7];
 
         var bkgdColor = "#00FF00";
         if (result != 1) {
@@ -120,20 +125,24 @@
             color: {
                 background: bkgdColor
             },
-            treeNode: treeNode
+            font: {
+                face: "Roboto",
+                size: 18
+            }
         });
         graph_id += 1;
 
-        for (const next_node of next_nodes) {
-            const child_id = await populateDecisionGraph(next_node, depth + 1);
+        for (const next_node_data of tree_data['children']) {
+            const child_id = await populateDecisionGraph(next_node_data, depth + 1);
             edges_buffer.push({
                 from: curr_id,
                 to: child_id, 
-                label: "",
+                label: `P: ${player_choice}\nE: ${enemy_choice}`,
                 font: {
-                    face: "Arial", 
-                    color: "blue", 
-                    size: 15
+                    face: "Roboto",
+                    color: "red", 
+                    size: 18,
+                    strokeWidth: 0,
                 },
                 shadow: false,
                 arrows: "to"
@@ -148,16 +157,16 @@
 <style>
     #decisionGraph {
         border: 1px solid white;
+        width: 25em;
+        height: 30em;
     }
 
     .generate-settings {
-        width: min-content;
-        height: min-content;
         display: grid;
         grid-template-columns: repeat(2, fit-content(100%));
         grid-template-rows: 1fr;
         grid-column-gap: 1em;
-        grid-row-gap: 0px;
+        grid-row-gap: 0em;
     }
 
     .button {
