@@ -1,7 +1,7 @@
 <script src="main.js">
     import { onMount } from "svelte";
 
-    import { wasmWorker, playerBox, enemyBox } from './stores.ts';
+    import { status, wasmWorker, playerBox, enemyBox } from './stores.ts';
     import { WASIReactorWorkerHost } from './wasi/host.ts';
     import { Int32, Uint32 } from './wasi/types.ts';
 
@@ -15,7 +15,6 @@
         const binaryURL = new URL("gen1.wasm", window.location.origin).toString();
         $wasmWorker = new WASIReactorWorkerHost(
             binaryURL,
-            4,
             (err) => {
                 let err_message;
                 switch (err) {
@@ -38,7 +37,10 @@
                         err_message = "";
                         break;
                 };
-                if (err_message != "") throw new Error(err_message);
+                if (err_message != "") {
+                    $status = err_message;
+                    throw new Error(err_message);
+                }
             },
         );
         await $wasmWorker.initialize();

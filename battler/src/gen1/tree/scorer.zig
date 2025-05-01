@@ -33,7 +33,7 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.g
             if (probability < 1e-3) {
                 score += 1000000 * probability;
             } else {
-                score += 100 * probability;
+                score += 1000 * probability;
             }
         },
         .Win => {

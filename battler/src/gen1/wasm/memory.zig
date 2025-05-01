@@ -162,8 +162,9 @@ fn load_field(comptime T: type, memory_i: usize) T {
 pub fn store(args: []const WASMArg) Errors!void {
     var memory_i: usize = 0;
     try store_args(args, &memory_i);
+    print("{}\n", .{memory_i});
     store_field(tag_t, -1, memory_i);
-    memory_i += 1;
+    memory_i += tag_t_size;
 }
 
 pub fn store_args(
@@ -230,46 +231,26 @@ pub fn store_args(
                 // needs to call store_node too
                 memory_i.* -= tag_t_size;
 
-                try store_node(tree.root, tree.data_gen, memory_i);
+                try store_tree(tree.root, tree.data_gen, memory_i);
 
-                // Because we want to store tree in BFS fashion, allocate space for pointer
-                // to children by holding start index of that space and filling after
-                // storing children of tree
-                const ptr_i: usize = memory_i.*;
-                memory_i.* += @sizeOf(ptr_t);
-
-                const transitions_ptr = try store_tree(tree.root, tree.data_gen, memory_i);
-                store_field(ptr_t, @intCast(transitions_ptr), ptr_i);
+                print_buf(200);
             },
         }
+
+        // print("arg_{}: {}", .{ i, memory_i.* });
     }
 }
 
-fn store_tree(curr_node: *const builder.DecisionNode, data_gen: data_gen_t, memory_i: *usize) !usize {
-    const alloc = da.allocator();
-    var ptr_indexes = std.ArrayList(u32).init(alloc);
-    try ptr_indexes.ensureTotalCapacity(curr_node.transitions.items.len);
-    defer ptr_indexes.deinit();
-
-    const transitions_memory_i: usize = memory_i.*;
+fn store_tree(curr_node: *const builder.DecisionNode, data_gen: data_gen_t, memory_i: *usize) !void {
+    try store_node(curr_node, data_gen, memory_i);
 
     for (curr_node.transitions.items) |next_node| {
-        try store_node(next_node, data_gen, memory_i);
-
-        // Because we want to store tree in BFS fashion, allocate space for pointer
-        // to children by holding start index of that space and filling after
-        // storing children of tree
-        const ptr_i: usize = memory_i.*;
-        memory_i.* += @sizeOf(ptr_t);
-        try ptr_indexes.append(ptr_i);
+        try store_tree(next_node, data_gen, memory_i);
     }
 
-    for (curr_node.transitions.items, 0..) |next_node, i| {
-        const transitions_ptr = try store_tree(next_node, data_gen, memory_i);
-        store_field(ptr_t, @intCast(transitions_ptr), ptr_indexes.items[i]);
-    }
-
-    return transitions_memory_i;
+    // Mark the end of a path
+    store_field(tag_t, -2, memory_i.*);
+    memory_i.* += tag_t_size;
 }
 
 fn store_node(curr_node: *const builder.DecisionNode, data_gen: data_gen_t, memory_i: *usize) !void {
@@ -284,9 +265,6 @@ fn store_node(curr_node: *const builder.DecisionNode, data_gen: data_gen_t, memo
     memory_i.* += length_t_size;
 
     try store_args(node_data, memory_i);
-
-    store_field(length_t, curr_node.transitions.items.len, memory_i.*);
-    memory_i.* += length_t_size;
 }
 
 fn store_field(comptime T: type, data: T, memory_i: usize) void {

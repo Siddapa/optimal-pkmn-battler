@@ -22,7 +22,6 @@ var player_imports: std.ArrayList(import.PokemonImport) = undefined;
 var enemy_imports: std.ArrayList(import.PokemonImport) = undefined;
 
 const seed: usize = 1234;
-pub const pkmn_options = pkmn.Options{ .internal = true };
 
 comptime {
     // WASI should have 32bit (4 byte) pointers
@@ -222,7 +221,9 @@ export fn getTreeData() errors.error_t {
 
 fn fetch_tree_data(node: *const builder.DecisionNode, alloc: std.mem.Allocator) ![]WASMArg {
     var ret_vals = std.ArrayList(memory.WASMArg).init(alloc);
-    // Score (TODO Seems to round up negative floats to 0 even when casting to i32)
+    // ID
+    try ret_vals.append(WASMArg{ .Uint32 = node.id });
+    // Score
     try ret_vals.append(WASMArg{ .Int32 = @intFromFloat(node.score) });
     // Result
     try ret_vals.append(WASMArg{ .string = @tagName(node.result.type) });

@@ -325,7 +325,7 @@ fn run_optimal(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pk
 
     const start_time = @as(u64, @bitCast(std.time.milliTimestamp()));
 
-    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, false, alloc);
+    const root: *builder.DecisionNode = try builder.optimal_decision_tree(b, result, box.items, true, alloc);
     defer builder.free_tree(root, alloc);
 
     const end_time = @as(u64, @bitCast(std.time.milliTimestamp()));

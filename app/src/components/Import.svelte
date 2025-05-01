@@ -25,14 +25,14 @@ Kingler
 - Tail Whip
 
 Rhyhorn
-- Flamethrower
+- Rock Throw
 - Mist
 - Water Gun
 - Psybeam</textarea>
         <textarea class="import-input" bind:this={enemyImport}>Jynx
 - Aurora Beam
 - Hyper Beam
-- Blizzard
+- Drill Peck
 - Peck
 
 Chansey

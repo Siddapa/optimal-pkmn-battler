@@ -32,8 +32,11 @@ comptime {
     assert(ROLL_INTERVALS != 0);
 }
 
+var node_count: usize = 0;
+
 /// Structs for buliding decision tree
 pub const DecisionNode = struct {
+    id: usize = 0,
     prev_node: ?*DecisionNode = null,
     battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
     team: [6]TeamSlotState,
@@ -68,6 +71,7 @@ pub fn optimal_decision_tree(
     threaded: bool,
     alloc: std.mem.Allocator,
 ) !*DecisionNode {
+    node_count = 0;
     const root: *DecisionNode = try alloc.create(DecisionNode);
     root.* = .{
         .battle = starting_battle,
@@ -216,6 +220,7 @@ pub fn exhaustive_decision_tree(
                     if (alpha < beta or !PRUNING) {
                         const child_node: *DecisionNode = try alloc.create(DecisionNode);
                         child_node.* = .{
+                            .id = node_count,
                             .prev_node = curr_node,
                             .battle = new_update.battle,
                             .team = curr_node.team,
@@ -228,6 +233,7 @@ pub fn exhaustive_decision_tree(
                                 .durations = new_update.durations,
                             },
                         };
+                        node_count += 1;
                         try curr_node.transitions.append(child_node);
                         const candidates = try exhaustive_decision_tree(
                             child_node,
@@ -274,6 +280,7 @@ pub fn exhaustive_decision_tree(
                                 if (alpha < beta or !PRUNING) {
                                     const child_node: *DecisionNode = try alloc.create(DecisionNode);
                                     child_node.* = .{
+                                        .id = node_count,
                                         .prev_node = curr_node,
                                         .battle = new_update.battle,
                                         .team = new_team,
@@ -286,6 +293,7 @@ pub fn exhaustive_decision_tree(
                                             .durations = new_update.durations,
                                         },
                                     };
+                                    node_count += 1;
                                     try curr_node.transitions.append(child_node);
                                     const candidates = try exhaustive_decision_tree(
                                         child_node,

@@ -19,17 +19,16 @@ export class WASIReactorWorkerHost {
 
     worker!: Worker;
     exports: Exports = {};
-    memory_start_index: number;
+    memory_start_index: number = 4;
+    little_endian: boolean = true;
 
     callbacks: Callbacks = {};
 
     constructor(
         binaryURL: string,
-        memory_start_index: number = 0,
         errorHandler: (err: any) => void
     ) {
         this.binaryURL = binaryURL;
-        this.memory_start_index = memory_start_index;
         window.addEventListener("unhandledrejection", (event) => 
             errorHandler(event.reason)
         );
@@ -99,16 +98,15 @@ export class WASIReactorWorkerHost {
                         }
 
                         let ret_vals: any[] = [];
-                        let mem_i: number = this.memory_start_index;
+                        let mem_i: object = {data: this.memory_start_index};
                         // this.displayBuffer(message.memory, 40);
                         while (true) {
                             // arg_length includes any bits used for tagging and length storing
-                            const [arg, new_mem_i] = this.parseArg(mem_i, message.memory);
+                            const arg = this.loadArg(mem_i, message.memory);
                             if (arg === null) {
                                 break;
                             }
                             ret_vals.push(arg);
-                            mem_i = new_mem_i;
                         }
 
                         this.callbacks[message.call_id].resolve(ret_vals);
@@ -141,13 +139,11 @@ export class WASIReactorWorkerHost {
         }
     }
 
-    parseArg(start_index: number, memory: SharedArrayBuffer): [any, number] {
-        let mem_i = start_index;
+    loadArg(mem_i: object, memory: SharedArrayBuffer): [any, number] {
         const view = new DataView(memory);
-        const little_endian = true;
 
-        const tag = view.getInt32(mem_i, little_endian);
-        mem_i += 4;
+        const tag = view.getInt32(mem_i.data, this.little_endian);
+        mem_i.data += 4;
 
         let arg;
         switch (tag) {
@@ -155,19 +151,19 @@ export class WASIReactorWorkerHost {
                 arg = null;
                 break;
             case 1:
-                arg = view.getInt32(mem_i, little_endian);
-                mem_i += 4;
+                arg = view.getInt32(mem_i.data, this.little_endian);
+                mem_i.data += 4;
                 break;
             case 2:
-                arg = view.getUint32(mem_i, little_endian);
-                mem_i += 4;
+                arg = view.getUint32(mem_i.data, this.little_endian);
+                mem_i.data += 4;
                 break;
             case 3:
-                const str_length = view.getUint32(mem_i, little_endian);
-                mem_i += 4;
+                const str_length = view.getUint32(mem_i.data, this.little_endian);
+                mem_i.data += 4;
 
-                const str_buffer = new Uint8Array(memory, mem_i, str_length);
-                mem_i += str_length;
+                const str_buffer = new Uint8Array(memory, mem_i.data, str_length);
+                mem_i.data += str_length;
 
                 let padding;
                 switch (str_length % 4) {
@@ -184,87 +180,92 @@ export class WASIReactorWorkerHost {
                         padding = 1;
                         break;
                 }
-                mem_i += padding;
+                mem_i.data += padding;
 
                 arg = new TextDecoder().decode(str_buffer);
                 break;
             case 4:
-                const i32_length = view.getUint32(mem_i, little_endian);
-                mem_i += 4;
+                const i32_length = view.getUint32(mem_i.data, this.little_endian);
+                mem_i.data += 4;
 
                 let i32_buffer = [];
                 let i32_i = 0;
                 while (i32_i < i32_length) {
-                    i32_buffer.push(view.getInt32(mem_i, little_endian));
+                    i32_buffer.push(view.getInt32(mem_i.data, this.little_endian));
                     i32_i += 1;
-                    mem_i += 4;
+                    mem_i.data += 4;
                 }
 
                 arg = new Int32Array(i32_buffer);
                 break;
             case 5:
-                const u32_length = view.getUint32(mem_i, little_endian);
-                mem_i += 4;
+                const u32_length = view.getUint32(mem_i.data, this.little_endian);
+                mem_i.data += 4;
 
                 let u32_buffer = [];
                 let u32_i = 0;
                 while (u32_i < u32_length) {
-                    u32_buffer.push(view.getUint32(mem_i, little_endian));
+                    u32_buffer.push(view.getUint32(mem_i.data, this.little_endian));
                     u32_i += 1;
-                    mem_i += 4;
+                    mem_i.data += 4;
                 }
 
                 arg = new Uint32Array(u32_buffer);
                 break;
             case 6:
-                // Much more efficient to build graph from the tree right here rather than
-                // returning an intermediate data type but oh well
-                const [node_data, transitions_length, next_nodes_i, new_mem_i] = this.parseNode(mem_i, memory);
-                mem_i = new_mem_i;
+                mem_i.data -= 4;
 
-                let tree = {};
-                tree['data'] = node_data;
-                
-                let child_data = [];
-                for (let i = 0; i < transitions_length; i++) {
-                    const [arg, new_mem_i] = this.parseArg(mem_i, memory);
-                    mem_i = new_mem_i;
-                    child_data.push(arg);
-                }
-                tree['children'] = child_data;
-
-                arg = tree;
+                arg = this.loadTree(mem_i, memory);
                 break;
             default:
                 throw new TypeError(
-                    `Unsupported Type Read From Buffer - tag: ${tag}, mem_i: ${mem_i}!`
+                    `Unsupported Type Read From Buffer - tag: ${tag}, mem_i: ${mem_i.data}!`
                 );
         }
 
-        return [arg, mem_i];
+        return arg;
     }
 
-    parseNode(mem_i: number, memory: SharedArrayBuffer): [number, number, number] {
-        const view = new DataView(memory);
-        const little_endian = true;
+    loadTree(mem_i: object, memory: SharedArrayBuffer) {
+        const node_data = this.loadNode(mem_i, memory);
+        
+        let tree = {data: node_data, children: []};
 
-        const data_length = view.getUint32(mem_i, little_endian);
-        mem_i += 4;
-
-        let node_data = [];
-        for (let i = 0; i < data_length; i++) {
-            // Bc this is only node_data, shouldn't have any tree tagged structures
-            const [node_arg, new_mem_i] = this.parseArg(mem_i, memory);
-            node_data.push(node_arg);
-            mem_i = new_mem_i;
+        switch (node_data) {
+            case null:
+                return null;
+            default:
+                let i = 0;
+                while (true) {
+                    const sub_tree = this.loadTree(mem_i, memory);
+                    if (sub_tree == null) break;
+                    tree.children.push(sub_tree);
+                }
+                return tree;
         }
+    }
 
-        const transitions_length = view.getUint32(mem_i, little_endian);
-        mem_i += 4;
+    loadNode(mem_i: object, memory: SharedArrayBuffer): [number, number, number, number] {
+        const view = new DataView(memory);
 
-        const next_nodes_i = view.getUint32(mem_i, little_endian);
-        mem_i += 4;
+        const tag = view.getInt32(mem_i.data, this.little_endian);
+        mem_i.data += 4;
 
-        return [node_data, transitions_length, next_nodes_i, mem_i];
+        switch (tag) {
+            case 6:
+                const data_length = view.getUint32(mem_i.data, this.little_endian);
+                mem_i.data += 4;
+
+                let node_data = [];
+                for (let i = 0; i < data_length; i++) {
+                    const node_arg = this.loadArg(mem_i, memory);
+                    node_data.push(node_arg);
+                }
+
+                return node_data;
+            case -2:
+                return null;
+                break;
+        }
     }
 }

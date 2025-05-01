@@ -1,12 +1,10 @@
 <div>
-    <h3>Decision Tree</h3>
+    <h3 class="title">Decision Tree</h3>
     <div class="generate-settings">
         <input class="button" type="button" value="Generate Tree" on:click={updateGraph}/>
-        <span class="status">{gs_state}</span>
+        <span class="status">{$status}</span>
+        <div id="decisionGraph"></div>
     </div>
-    <br>
-    <br>
-    <div id="decisionGraph"></div>
 </div>
 
 
@@ -14,7 +12,7 @@
     import { onMount } from "svelte";
     import { Uint32 } from "../wasi/types.ts";
     import { DataSet, Network } from "vis-network/standalone";
-    import { wasmWorker, playerBox, enemyBox } from '../stores.ts';
+    import { status, wasmWorker, playerBox, enemyBox } from '../stores.ts';
 
     let tree_root;
 
@@ -25,15 +23,9 @@
     var edges_buffer = [];
     let graph_id = 0;
 
-    let gs_state = $state("");
-
     onMount(() => {
         initGraph();
     });
-
-    function update_gs(...states) {
-        gs_states = states;
-    }
 
     function initGraph() {
         var container = document.getElementById("decisionGraph");
@@ -64,10 +56,10 @@
 
     const updateGraph = async () => {
         if ($playerBox.length == 0) {
-            gs_state = "Import some pokemon for the player first!";
+            $status = "Import some pokemon for the player first!";
             return;
         } else if ($enemyBox.length == 0) {
-            gs_state = "Import some pokemon for the enemy first!";
+            $status = "Import some pokemon for the enemy first!";
             return;
         }
 
@@ -75,40 +67,70 @@
         edges.clear();
         network.redraw();
 
-        gs_state = "Calculating optimal line...";
+        $status = "Calculating optimal line...";
 
         $wasmWorker.exports.generateOptimizedDecisionTree(new Uint32(0)).then(async (result) => {
             [tree_root] = result;
 
-            gs_state = "Fetching tree...";
+            $status = "Fetching tree...";
             const [tree_data] = await $wasmWorker.exports.getTreeData(new Uint32(tree_root));
-            console.log(tree_data);
+            const tree_stats = fetchStats(tree_data, 0);
+            console.log("tree_data", tree_data);
+            console.log("tree_stats", tree_stats);
 
-            gs_state = "Populating graph...";
+            $status = "Populating graph...";
             await populateDecisionGraph(tree_data, 0);
 
-            gs_state = "Rendering graph...";
+            $status = "Rendering graph...";
             nodes.add(nodes_buffer);
             edges.add(edges_buffer);
             network.redraw();
-            network.moveTo({scale: 0.3, animation: {duration: 5000, easingFunction: "easeInCubic"}});
+            network.moveTo({
+                position : {x: 0, y: -90 * tree_stats.max_depth},
+                scale: 0.5,
+                animation: {
+                    duration: 4000,
+                    easingFunction: "easeOutCubic"
+                },
+            });
 
-            gs_state = "Finished!";
+            $status = "Finished!";
             graph_id = 0;
             nodes_buffer = [];
             edges_buffer = [];
         });
     }
 
+    const fetchStats = (tree_data, depth) => {
+        let node_count = 1;
+        let max_depth = 0;
+        for (const next_node_data of tree_data['children']) {
+            const child_stats = fetchStats(next_node_data, depth + 1);
+            node_count += child_stats.node_count;
+            if (child_stats.max_depth > max_depth) {
+                max_depth = child_stats.max_depth;
+            }
+        }
+        if (depth > max_depth) {
+            max_depth = depth;
+        }
+
+        return {
+            node_count: node_count,
+            max_depth: max_depth,
+        };
+    }
+
     const populateDecisionGraph = async (tree_data, depth) => {
-        const score = tree_data['data'][0];
-        const result = tree_data['data'][1];
-        const player_lead_name = tree_data['data'][2];
-        const player_lead_hp = tree_data['data'][3];
-        const player_choice = tree_data['data'][4];
-        const enemy_lead_name = tree_data['data'][5];
-        const enemy_lead_hp = tree_data['data'][6];
-        const enemy_choice = tree_data['data'][7];
+        const id = tree_data['data'][0];
+        const score = tree_data['data'][1];
+        const result = tree_data['data'][2];
+        const player_lead_name = tree_data['data'][3];
+        const player_lead_hp = tree_data['data'][4];
+        const player_choice = tree_data['data'][5];
+        const enemy_lead_name = tree_data['data'][6];
+        const enemy_lead_hp = tree_data['data'][7];
+        const enemy_choice = tree_data['data'][8];
 
         var bkgdColor = "#00FF00";
         if (result != 1) {
@@ -128,16 +150,17 @@
             font: {
                 face: "Roboto",
                 size: 18
-            }
+            },
+            node_data: tree_data['data']
         });
         graph_id += 1;
 
         for (const next_node_data of tree_data['children']) {
-            const child_id = await populateDecisionGraph(next_node_data, depth + 1);
+            const [child_id, child_player_choice, child_enemy_choice] = await populateDecisionGraph(next_node_data, depth + 1);
             edges_buffer.push({
                 from: curr_id,
                 to: child_id, 
-                label: `P: ${player_choice}\nE: ${enemy_choice}`,
+                label: `P: ${child_player_choice}\nE: ${child_enemy_choice}`,
                 font: {
                     face: "Roboto",
                     color: "red", 
@@ -149,24 +172,18 @@
             })
         }
 
-        return curr_id;
+        return [curr_id, player_choice, enemy_choice];
     }
 </script>
 
 
 <style>
-    #decisionGraph {
-        border: 1px solid white;
-        width: 25em;
-        height: 30em;
-    }
-
     .generate-settings {
         display: grid;
         grid-template-columns: repeat(2, fit-content(100%));
-        grid-template-rows: 1fr;
+        grid-template-rows: repeat(2, fit-content(100%));
         grid-column-gap: 1em;
-        grid-row-gap: 0em;
+        grid-row-gap: 1em;
     }
 
     .button {
@@ -176,8 +193,15 @@
 
     .status {
         color: lightgreen;
-        width: 30em;
+        width: 15em;
         height: 2em;
+    }
+
+    #decisionGraph {
+        border: 1px solid white;
+        width: 25em;
+        height: 30em;
+        grid-area: 2 / 1 / 3 / 3;
     }
 
 </style>

@@ -228,11 +228,11 @@ pub fn traverse_decision_tree(
         try writer.writeAll("-" ** 50);
         try writer.writeAll("\n");
         std.mem.sort(*builder.DecisionNode, curr_node.transitions.items, {}, builder.compare_score);
-        for (curr_node.transitions.items, 0..) |next_node, i| {
+        for (curr_node.transitions.items) |next_node| {
             const next_node_transitions = next_node.transitions.items.len;
 
             try writer.print("{:>04}", .{
-                i + 1,
+                next_node.id,
             });
             try writer.writeAll("   ");
 
@@ -329,7 +329,7 @@ pub fn LinkedList(comptime T: type) type {
         }
 
         // Add an element to the end of the list
-        pub fn append(self: *Self, new: T) !void {
+        pub fn insert(self: *Self, new: T) !void {
             var curr_node = self.head;
             var prev_node = curr_node;
             while (curr_node) |valid_node| {
@@ -402,10 +402,10 @@ fn cmp_int(x: i8, y: i8) bool {
 test "linked list ops" {
     var list = LinkedList(i8).init(std.testing.allocator);
 
-    try list.append(20);
+    try list.insert(20);
     try list.prepend(10);
-    try list.append(30);
-    try list.append(40);
+    try list.insert(30);
+    try list.insert(40);
     try list.prepend(0);
     assert(list.count() == 5);
 
@@ -414,7 +414,7 @@ test "linked list ops" {
     list.remove(40, cmp_int);
     assert(list.count() == 2);
 
-    try list.append(50);
+    try list.insert(50);
     try list.prepend(-10);
     assert(list.count() == 4);
 
