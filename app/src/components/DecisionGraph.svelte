@@ -12,6 +12,7 @@
     import { onMount } from "svelte";
     import { Uint32 } from "../wasi/types.ts";
     import { DataSet, Network } from "vis-network/standalone";
+    import { SVG, Rect } from "@svgdotjs/svg.js";
     import { status, wasmWorker, playerBox, enemyBox } from '../stores.ts';
 
     let tree_root;
@@ -25,6 +26,7 @@
 
     onMount(() => {
         initGraph();
+        // createNodeImage();
     });
 
     function initGraph() {
@@ -122,15 +124,14 @@
     }
 
     const populateDecisionGraph = async (tree_data, depth) => {
-        const id = tree_data['data'][0];
-        const score = tree_data['data'][1];
-        const result = tree_data['data'][2];
-        const player_lead_name = tree_data['data'][3];
-        const player_lead_hp = tree_data['data'][4];
-        const player_choice = tree_data['data'][5];
-        const enemy_lead_name = tree_data['data'][6];
-        const enemy_lead_hp = tree_data['data'][7];
-        const enemy_choice = tree_data['data'][8];
+        const score = tree_data['data'][0];
+        const result = tree_data['data'][1];
+        const player_lead_name = tree_data['data'][2];
+        const player_lead_hp = tree_data['data'][3];
+        const player_choice = tree_data['data'][4];
+        const enemy_lead_name = tree_data['data'][5];
+        const enemy_lead_hp = tree_data['data'][6];
+        const enemy_choice = tree_data['data'][7];
 
         var bkgdColor = "#00FF00";
         if (result != 1) {
@@ -174,6 +175,12 @@
 
         return [curr_id, player_choice, enemy_choice];
     }
+
+    const createNodeImage = () => {
+        var draw = SVG().addTo('container').size('100%', '100%').fill("#f06");
+
+        console.log(draw);
+    };
 </script>
 
 

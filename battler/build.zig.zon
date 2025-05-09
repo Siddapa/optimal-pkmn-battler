@@ -5,6 +5,6 @@
     .minimum_zig_version = "0.14.0",
     .paths = .{"."},
     .dependencies = .{
-        .pkmn = .{ .url = "https://github.com/pkmn/engine/archive/nightly.tar.gz", .hash = "N-V-__8AAJlOLgD44gm9VBxH6Jy4bOb0fFqS-v_GDKd5HsW8"},
+        .pkmn = .{ .url = "https://github.com/pkmn/engine/archive/nightly.tar.gz", .hash = "N-V-__8AAEVuLgDWdpIePJ44hidq62QfyB-dWGQIbqPAN3Vi"},
     },
 }

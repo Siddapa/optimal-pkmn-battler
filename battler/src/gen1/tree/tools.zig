@@ -180,22 +180,21 @@ pub fn move_details(mon: *const pkmn.gen1.ActivePokemon, choice: pkmn.Choice, wr
     });
 }
 
-pub fn display_choice(next_node: *builder.DecisionNode, comptime player: usize, writer: anytype) !void {
-    const choice = next_node.choices[player];
-    // try writer.print("fsdofjiosdf: {}\n", .{choice.data});
-    // try writer.print("jfois: {}\n", .{choice.type});
+pub fn fetch_choice(node: *const builder.DecisionNode, comptime player: usize) []const u8 {
+    const choice = node.choices[player];
     const side = if (player == 0) .P1 else .P2;
     switch (choice.type) {
         .Move => {
-            if (choice.data != 0) try writer.print("{s: >16}", .{@tagName(next_node.battle.side(side).stored().move(choice.data).id)});
+            if (choice.data != 0) return @tagName(node.battle.side(side).stored().move(choice.data).id);
         },
         .Switch => {
             if (choice.data != 42) {
-                try writer.print("{s: >16}", .{@tagName(next_node.battle.side(side).stored().species)});
+                return @tagName(node.battle.side(side).stored().species);
             }
         },
-        .Pass => try writer.writeAll("Pass"),
+        .Pass => return "Pass",
     }
+    return "";
 }
 
 pub fn traverse_decision_tree(
@@ -224,28 +223,26 @@ pub fn traverse_decision_tree(
 
         // Displays possible moves/switches as well as traversing to previous nodes/quitting
         try writer.writeAll("Select one of the following choices: \n");
-        try writer.writeAll("T ID |         P Choice |         E Choice |     Score | Next # of Transitions | Actions\n");
-        try writer.writeAll("-" ** 50);
+        try writer.writeAll("T ID |         P Choice |         E Choice |       Score |         Probability | Next # of Transitions | Actions\n");
+        try writer.writeAll("-" ** 100);
         try writer.writeAll("\n");
+
         std.mem.sort(*builder.DecisionNode, curr_node.transitions.items, {}, builder.compare_score);
-        for (curr_node.transitions.items) |next_node| {
+        for (curr_node.transitions.items, 0..) |next_node, i| {
             const next_node_transitions = next_node.transitions.items.len;
 
-            try writer.print("{:>04}", .{
-                next_node.id,
+            try writer.print("{:>04}   ", .{
+                i + 1,
             });
-            try writer.writeAll("   ");
 
-            try display_choice(next_node, 0, writer);
-            try writer.writeAll("   ");
-            try display_choice(next_node, 1, writer);
-            try writer.writeAll("   ");
+            try writer.print("{s: >16}   ", .{fetch_choice(next_node, 0)});
+            try writer.print("{s: >16}   ", .{fetch_choice(next_node, 1)});
 
-            try writer.print("{d: >6.4}   {: >21}, ", .{
-                next_node.score,
-                next_node_transitions,
-            });
-            try writer.writeAll("   ");
+            try writer.print("{d: >11.4}   ", .{next_node.score});
+
+            try writer.print("{d: >16}   ", .{next_node.probability});
+
+            try writer.print("{: >21}   ", .{next_node_transitions});
 
             try writer.print("{}", .{next_node.chance.actions});
 

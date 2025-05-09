@@ -6,11 +6,14 @@ var import_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 var tree_prep_arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
 
 const builder = @import("builder");
+const tools = builder.tools;
+
 const pkmn = @import("pkmn");
+
 const import = @import("import.zig");
+const errors = @import("errors.zig");
 const memory = @import("memory.zig");
 const WASMArg = memory.WASMArg;
-const errors = @import("errors.zig");
 
 var tree_gen_alloc = std.heap.wasm_allocator;
 var import_alloc: std.mem.Allocator = undefined;
@@ -221,10 +224,8 @@ export fn getTreeData() errors.error_t {
 
 fn fetch_tree_data(node: *const builder.DecisionNode, alloc: std.mem.Allocator) ![]WASMArg {
     var ret_vals = std.ArrayList(memory.WASMArg).init(alloc);
-    // ID
-    try ret_vals.append(WASMArg{ .Uint32 = node.id });
     // Score
-    try ret_vals.append(WASMArg{ .Int32 = @intFromFloat(node.score) });
+    try ret_vals.append(WASMArg{ .Int32 = node.score });
     // Result
     try ret_vals.append(WASMArg{ .string = @tagName(node.result.type) });
     // Player Lead Name
@@ -232,44 +233,14 @@ fn fetch_tree_data(node: *const builder.DecisionNode, alloc: std.mem.Allocator) 
     // Player Lead HP
     try ret_vals.append(WASMArg{ .Uint32 = node.battle.side(.P1).stored().hp });
     // Player Choice
-    try ret_vals.append(WASMArg{ .string = @tagName(node.choices[0].type) });
+    try ret_vals.append(WASMArg{ .string = tools.fetch_choice(node, 0) });
     // Enemy Lead Name
     try ret_vals.append(WASMArg{ .string = @tagName(node.battle.side(.P2).stored().species) });
     // Enemy Lead HP
     try ret_vals.append(WASMArg{ .Uint32 = node.battle.side(.P2).stored().hp });
     // Enemy Choice
-    try ret_vals.append(WASMArg{ .string = @tagName(node.choices[1].type) });
+    try ret_vals.append(WASMArg{ .string = tools.fetch_choice(node, 1) });
     return ret_vals.toOwnedSlice();
-}
-
-export fn getNodeData() errors.error_t {
-    var arena = std.heap.ArenaAllocator.init(std.heap.wasm_allocator);
-    const alloc = arena.allocator();
-    defer arena.deinit();
-
-    var args: [1]WASMArg = undefined;
-    memory.load(&args, &.{.Uint32}, alloc) catch |err| return errors.to_value(err);
-    const curr_node: *builder.DecisionNode = @ptrFromInt(args[0].Uint32);
-
-    var node_ptr_values = std.ArrayList(u32).init(tree_prep_alloc);
-    defer node_ptr_values.deinit();
-    for (curr_node.transitions.items) |next_node| {
-        node_ptr_values.append(@intFromPtr(next_node)) catch |err| return errors.to_value(err);
-    }
-
-    const ret_vals = [_]WASMArg{
-        WASMArg{ .Uint32 = @intFromFloat(curr_node.score) },
-        WASMArg{ .string = @tagName(curr_node.result.type) },
-        WASMArg{ .string = @tagName(curr_node.battle.side(.P1).stored().species) },
-        WASMArg{ .Uint32 = curr_node.battle.side(.P1).stored().hp },
-        WASMArg{ .string = @tagName(curr_node.choices[0].type) },
-        WASMArg{ .string = @tagName(curr_node.battle.side(.P2).stored().species) },
-        WASMArg{ .Uint32 = curr_node.battle.side(.P2).stored().hp },
-        WASMArg{ .string = @tagName(curr_node.choices[1].type) },
-        WASMArg{ .Uint32Array = node_ptr_values.items },
-    };
-    memory.store(&ret_vals) catch |err| return errors.to_value(err);
-    return 0;
 }
 
 // Player Encoding:

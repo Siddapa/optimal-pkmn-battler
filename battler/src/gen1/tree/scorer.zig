@@ -9,8 +9,7 @@ pub const NTN = struct {};
 
 pub const Side = struct {};
 
-pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.gen1.Pokemon, probability: builder.score_t) !score_t {
-    _ = box;
+pub fn score_node(scoring_node: *builder.DecisionNode, box: []const pkmn.gen1.Pokemon) !score_t {
     const battle = scoring_node.battle;
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P2);
@@ -18,26 +17,24 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.g
     var score: score_t = 0;
     switch (scoring_node.result.type) {
         .None => {
-            score += 500 * dead(enemy_side);
+            score += 100 * type_matchup(player_side.stored(), enemy_side.stored());
+
             score -= 500 * dead(player_side);
+            score += 500 * dead(enemy_side);
 
-            score += 1 * damage_per_turn(enemy_side, battle.turn, false);
-            score -= 1 * damage_per_turn(player_side, battle.turn, true);
+            score -= 1 * damage_per_turn(player_side, battle.turn);
+            score += 1 * damage_per_turn(enemy_side, battle.turn);
 
-            score += 2 * status(enemy_side);
             score -= 2 * status(player_side);
+            score += 2 * status(enemy_side);
 
-            // score += 1 * volatiles(&battle, box, false);
-            // score += 1 * volatiles(&battle, box, true);
+            score -= 1 * volatiles(&battle, box, true);
+            score += 1 * volatiles(&battle, box, false);
 
-            if (probability < 1e-3) {
-                score += 1000000 * probability;
-            } else {
-                score += 1000 * probability;
-            }
+            score -= std.math.pow(score_t, scoring_node.probability, 2) * 10;
         },
         .Win => {
-            score += std.math.floatMax(score_t);
+            score += builder.BETA_MAX;
         },
         else => {},
     }
@@ -45,6 +42,48 @@ pub fn score_node(scoring_node: *const builder.DecisionNode, box: []const pkmn.g
     // print("Probability: {}\n\n", .{scoring_node.probability});
     // print("Score: {}\n", .{score});
     return score;
+}
+
+fn type_matchup(p_lead: *const pkmn.gen1.Pokemon, e_lead: *const pkmn.gen1.Pokemon) score_t {
+    const p_single_type: bool = p_lead.types.type1 == p_lead.types.type2;
+    const e_single_type: bool = e_lead.types.type1 == e_lead.types.type2;
+    var score_sum: score_t = 0;
+
+    switch (pkmn.gen1.Type.effectiveness(p_lead.types.type1, e_lead.types.type1)) {
+        .Super => score_sum += 1,
+        .Neutral => score_sum += 0,
+        .Resisted => score_sum += -1,
+        .Immune => score_sum += -2,
+    }
+
+    if (!e_single_type) {
+        switch (pkmn.gen1.Type.effectiveness(p_lead.types.type1, e_lead.types.type2)) {
+            .Super => score_sum += 1,
+            .Neutral => score_sum += 0,
+            .Resisted => score_sum += -1,
+            .Immune => score_sum += -2,
+        }
+    }
+
+    if (!p_single_type) {
+        switch (pkmn.gen1.Type.effectiveness(p_lead.types.type2, e_lead.types.type1)) {
+            .Super => score_sum += 1,
+            .Neutral => score_sum += 0,
+            .Resisted => score_sum += -1,
+            .Immune => score_sum += -2,
+        }
+    }
+
+    if (!p_single_type and !e_single_type) {
+        switch (pkmn.gen1.Type.effectiveness(p_lead.types.type2, e_lead.types.type2)) {
+            .Super => score_sum += 1,
+            .Neutral => score_sum += 0,
+            .Resisted => score_sum += -1,
+            .Immune => score_sum += -2,
+        }
+    }
+
+    return score_sum;
 }
 
 fn dead(side: *const pkmn.gen1.Side) score_t {
@@ -57,16 +96,12 @@ fn dead(side: *const pkmn.gen1.Side) score_t {
     return count;
 }
 
-fn damage_per_turn(side: *const pkmn.gen1.Side, turn: u16, player: bool) score_t {
+fn damage_per_turn(side: *const pkmn.gen1.Side, turn: u16) score_t {
     var total_damage: score_t = 0;
     for (side.pokemon) |mon| {
-        total_damage += @as(score_t, @floatFromInt(mon.stats.hp - mon.hp));
+        total_damage += @floatFromInt(mon.stats.hp - mon.hp);
     }
-    total_damage *= 1 / @as(score_t, @floatFromInt(turn));
-    if (total_damage == 0 and player) {
-        // Ensure damage taken on player side is scored heavily
-        return 10000;
-    }
+    total_damage = @divTrunc(total_damage, @as(score_t, @floatFromInt(turn)));
     return total_damage;
 }
 
@@ -85,7 +120,7 @@ fn status(side: *const pkmn.gen1.Side) score_t {
     } else if (pkmn.gen1.Status.is(stored.status, .FRZ)) {
         return 500;
     } else if (pkmn.gen1.Status.is(stored.status, .PAR)) {
-        return @floatFromInt(active.stats.spe);
+        return @as(score_t, @floatFromInt(active.stats.spe));
     } else if (pkmn.gen1.Status.is(stored.status, .EXT)) {
         // .EXT identifies BADLY TOXIC or self-inflicted sleep
         // depending on the encoding
@@ -96,6 +131,7 @@ fn status(side: *const pkmn.gen1.Side) score_t {
 }
 
 const Volatiles = enum(u16) {
+    // bools
     Bide,
     Thrashing,
     MultiHit,
@@ -114,6 +150,7 @@ const Volatiles = enum(u16) {
     LightScreen,
     Reflect,
     Transform,
+    // ints
     confusion,
     attacks,
     state,
@@ -122,115 +159,114 @@ const Volatiles = enum(u16) {
     disable_duration,
     disable_move,
     toxic,
+    None,
 };
 
-fn volatiles(battle: *const pkmn.gen1.Battle(pkmn.gen1.PRNG), box: []const pkmn.gen1.Pokemon, player: bool) score_t {
+fn volatiles(battle: *const pkmn.gen1.Battle(pkmn.gen1.PRNG), box: []const pkmn.gen1.Pokemon, comptime player: bool) score_t {
     const player_side = battle.side(.P1);
     const enemy_side = battle.side(.P1);
     const active = if (player) player_side.active else enemy_side.active;
 
-    const volatile_map = std.StaticStringMap(Volatiles).initComptime(.{
-        // bools
-        .{ "Bide", .Bide },
-        .{ "Thrashing", .Thrashing },
-        .{ "MultiHit", .MultiHit },
-        .{ "Flinch", .Flinch },
-        .{ "Charging", .Charging },
-        .{ "Binding", .Binding },
-        .{ "Invulnerable", .Invulnerable },
-        .{ "Confusion", .Confusion },
-        .{ "Mist", .Mist },
-        .{ "FocusEnergy", .FocusEnergy },
-        .{ "Substitute", .Substitute },
-        .{ "Recharging", .Recharging },
-        .{ "Rage", .Rage },
-        .{ "LeechSeed", .LeechSeed },
-        .{ "Toxic", .Toxic },
-        .{ "LightScreen", .LightScreen },
-        .{ "Reflect", .Reflect },
-        .{ "Transform", .Transform },
-        // ints
-        .{ "confusion", .confusion },
-        .{ "attacks", .attacks },
-        .{ "state", .state },
-        .{ "substitute", .substitute },
-        .{ "transform", .transform },
-        .{ "disable_duration", .disable_duration },
-        .{ "disable_move", .disable_move },
-        .{ "toxic", .toxic },
-    });
-
     var score_sum: score_t = 0;
 
-    for (std.meta.fields(pkmn.gen1.Volatiles)) |v| {
+    inline for (std.meta.fields(pkmn.gen1.Volatiles)) |v| {
         switch (@FieldType(pkmn.gen1.Volatiles, v.name)) {
             bool => {
                 const value: bool = @field(active.volatiles, v.name);
-                if (!value) continue;
-                if (player) {
-                    switch (volatile_map.get(v.name)) {
-                        .Bide => score_sum += -100,
-                        .Thrashing => score_sum += -500,
-                        .MultiHit => score_sum += 0,
-                        .Flinch => score_sum += -200,
-                        .Charging => score_sum += -500,
-                        .Binding => score_sum += -100,
-                        .Invulnerable => score_sum += 0,
-                        .Confusion => score_sum += -100,
-                        .Mist => score_sum += 0, // Check if setup moves available
-                        .FocusEnergy => score_sum += 0,
-                        .Substitute => score_sum += 10, // Check if stall type
-                        .Recharging => score_sum += -500,
-                        .Rage => score_sum += -1000,
-                        .LeechSeed => score_sum += 0,
-                        .Toxic => score_sum += 0, // Check if sweeper
-                        .LightScreen => score_sum += bp_per_move(enemy_side.pokemon, true),
-                        .Reflect => score_sum += bp_per_move(enemy_side.pokemon, false),
-                        .Transform => score_sum += 0,
-                    }
-                } else {
-                    switch (volatile_map.get(v.name)) {
-                        .Bide => score_sum += 500,
-                        .Thrashing => score_sum += 100, // Depends on the move its thrashing on
-                        .MultiHit => score_sum += 0,
-                        .Flinch => score_sum += 100,
-                        .Charging => score_sum += 400,
-                        .Binding => score_sum += 500,
-                        .Invulnerable => score_sum += 0,
-                        .Confusion => score_sum += 200,
-                        .Mist => score_sum += 0,
-                        .FocusEnergy => score_sum += 200,
-                        .Substitute => score_sum += -100,
-                        .Recharging => score_sum += 300,
-                        .Rage => score_sum += 400, // Switch and go for one shot moves
-                        .LeechSeed => score_sum += 500,
-                        .Toxic => score_sum += 500,
-                        .LightScreen => score_sum += bp_per_move(player_side.pokemon, true) + bp_per_move(box, true),
-                        .Reflect => score_sum += bp_per_move(player_side.pokemon, false) + bp_per_move(box, false),
-                        .Transform => score_sum += 0, // Ignore ditto
+                if (value) {
+                    if (player) {
+                        switch (std.meta.stringToEnum(Volatiles, v.name) orelse .None) {
+                            .Bide => score_sum += -100,
+                            .Thrashing => score_sum += -500,
+                            .MultiHit => score_sum += 0,
+                            .Flinch => score_sum += -200,
+                            .Charging => score_sum += -500,
+                            .Binding => score_sum += -100,
+                            .Invulnerable => score_sum += 0,
+                            .Confusion => score_sum += -100,
+                            .Mist => score_sum += 0, // Check if setup moves available
+                            .FocusEnergy => score_sum += 0,
+                            .Substitute => score_sum += 10, // Check if stall type
+                            .Recharging => score_sum += -500,
+                            .Rage => score_sum += -1000,
+                            .LeechSeed => score_sum += 0,
+                            .Toxic => score_sum += 0, // Check if sweeper
+                            .LightScreen => score_sum += bp_per_move(&enemy_side.pokemon, true),
+                            .Reflect => score_sum += bp_per_move(&enemy_side.pokemon, false),
+                            .Transform => score_sum += 0,
+                            else => score_sum += 0,
+                        }
+                    } else {
+                        switch (std.meta.stringToEnum(Volatiles, v.name) orelse .None) {
+                            .Bide => score_sum += 500,
+                            .Thrashing => score_sum += 100, // Depends on the move its thrashing on
+                            .MultiHit => score_sum += 0,
+                            .Flinch => score_sum += 100,
+                            .Charging => score_sum += 400,
+                            .Binding => score_sum += 500,
+                            .Invulnerable => score_sum += 0,
+                            .Confusion => score_sum += 200,
+                            .Mist => score_sum += 0,
+                            .FocusEnergy => score_sum += 200,
+                            .Substitute => score_sum += -100,
+                            .Recharging => score_sum += 300,
+                            .Rage => score_sum += 400, // Switch and go for one shot moves
+                            .LeechSeed => score_sum += 500,
+                            .Toxic => score_sum += 500,
+                            .LightScreen => score_sum += bp_per_move(&player_side.pokemon, true) + bp_per_move(box, true),
+                            .Reflect => score_sum += bp_per_move(&player_side.pokemon, false) + bp_per_move(box, false),
+                            .Transform => score_sum += 0, // Ignore ditto
+                            else => score_sum += 0,
+                        }
                     }
                 }
             },
             else => {
                 // Cast all non-bool fields to u16 (largest integer field)
-                const value: u16 = @intCast(@field(active.volatiles, v.name));
-                _ = value;
+                const value: score_t = @as(score_t, @floatFromInt(@field(active.volatiles, v.name)));
+                if (player) {
+                    switch (std.meta.stringToEnum(Volatiles, v.name) orelse .None) {
+                        .confusion => score_sum += value * 100,
+                        .attacks => score_sum += value * 100,
+                        .state => score_sum += 0,
+                        .substitute => score_sum += value * 100,
+                        .transform => score_sum += 0,
+                        .disable_duration => score_sum += 0,
+                        .disable_move => score_sum += 0,
+                        .toxic => score_sum -= 100,
+                        else => score_sum += 0,
+                    }
+                } else {
+                    switch (std.meta.stringToEnum(Volatiles, v.name) orelse .None) {
+                        .confusion => score_sum += value * 100,
+                        .attacks => score_sum += value * 100,
+                        .state => score_sum += 0,
+                        .substitute => score_sum += value * 100,
+                        .transform => score_sum += 0,
+                        .disable_duration => score_sum += 0,
+                        .disable_move => score_sum += 0,
+                        .toxic => score_sum -= 100,
+                        else => score_sum += 0,
+                    }
+                }
             },
         }
     }
+
+    return score_sum;
 }
 
 fn bp_per_move(mons: []const pkmn.gen1.Pokemon, special: bool) score_t {
-    var bp_sum: usize = 0;
-    var moves_count: usize = 0;
+    var bp_sum: score_t = 0;
+    var moves_count: score_t = 0;
 
     for (mons) |mon| {
         for (mon.moves) |move_slot| {
             if (move_slot.id != .None) {
                 const move = pkmn.gen1.Move.get(move_slot.id);
-                if (pkmn.gen1.Type.isSpecial(move) and special) {
+                if (pkmn.gen1.Type.special(move.type) and special) {
                     if (move.bp > 0) {
-                        bp_sum += move.bp;
+                        bp_sum += @as(score_t, @floatFromInt(move.bp));
                         moves_count += 1;
                     }
                 }

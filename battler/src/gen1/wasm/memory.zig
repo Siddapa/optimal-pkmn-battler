@@ -65,7 +65,6 @@ pub fn print_buf(comptime len: usize) void {
     while (i < len) : (i += 4) {
         print("{}: {} {}\n\n", .{ i, load_field(i32, i), load_field(u32, i) });
     }
-    print("\n\n\n\n\n", .{});
 }
 
 pub fn wipe(memory_i: usize) void {
@@ -162,7 +161,6 @@ fn load_field(comptime T: type, memory_i: usize) T {
 pub fn store(args: []const WASMArg) Errors!void {
     var memory_i: usize = 0;
     try store_args(args, &memory_i);
-    print("{}\n", .{memory_i});
     store_field(tag_t, -1, memory_i);
     memory_i += tag_t_size;
 }
@@ -227,17 +225,13 @@ pub fn store_args(
                 }
             },
             .Tree => |*tree| {
-                // Use store_node to store tag to make it consistent for when store_tree
-                // needs to call store_node too
+                // Use store_node() to store tag so that function is reusable for
+                // root as well
                 memory_i.* -= tag_t_size;
 
                 try store_tree(tree.root, tree.data_gen, memory_i);
-
-                print_buf(200);
             },
         }
-
-        // print("arg_{}: {}", .{ i, memory_i.* });
     }
 }
 

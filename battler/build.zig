@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) !void {
     const tests = b.addExecutable(.{
         .name = tests_name,
         .root_source_file = b.path(tests_source),
-        .optimize = .ReleaseFast,
+        .optimize = .Debug,
         .target = default_options,
     });
 

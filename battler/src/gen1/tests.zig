@@ -13,43 +13,58 @@ const tools = builder.tools;
 
 var stdout = std.io.getStdOut().writer();
 
-var chance = pkmn.gen1.Chance(pkmn.Rational(u128)){ .probability = .{} };
+var chance = pkmn.gen1.Chance(pkmn.Rational(builder.prob_t)){ .probability = .{} };
 var options = pkmn.battle.options(
     pkmn.protocol.NULL,
     &chance,
     pkmn.gen1.Calc{},
 );
 
+const box_t = union(enum) {
+    data: []pkmn.gen1.Pokemon,
+    helpers: []pkmn.gen1.helpers.Pokemon,
+};
+
 pub fn main() !void {
     // try base_transitions();
     // try box_switch_transitions();
-    try optimalWASM();
+    // try optimalWASM();
     // try optimal1();
-    // try exhaust_random();
+    try exhaust_random();
     // try exhaust1();
     // try exhaust2();
     // try box_switch_exhaust();
 }
 
-fn random_battle(seed: u64) !struct {
-    battle: pkmn.gen1.Battle(pkmn.gen1.PRNG),
-    box: std.ArrayList(pkmn.gen1.Pokemon),
-} {
-    var rng = pkmn.PSRNG.init(seed);
+fn random_battle(rng: *pkmn.PSRNG, box: []pkmn.gen1.helpers.Pokemon, moves: [][4]pkmn.gen1.Move) !pkmn.gen1.Battle(pkmn.gen1.PRNG) {
     const rand_opts = pkmn.gen1.helpers.Options{
         .cleric = false,
         .block = false,
     };
 
-    const battle = pkmn.gen1.helpers.Battle.random(&rng, rand_opts);
+    const battle = pkmn.gen1.helpers.Battle.random(rng, rand_opts);
 
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-    const box_size = rng.range(usize, 1, 10);
-    for (0..box_size) |_| {
-        try box.append(pkmn.gen1.helpers.Pokemon.random(&rng, rand_opts));
+    for (0..box.len) |i| {
+        const species = rng.range(u8, 1, 151);
+        const move1 = rng.range(u8, 1, 164);
+        const move2 = rng.range(u8, 1, 164);
+        const move3 = rng.range(u8, 1, 164);
+        const move4 = rng.range(u8, 1, 164);
+
+        moves[i] = .{
+            @enumFromInt(move1),
+            @enumFromInt(move2),
+            @enumFromInt(move3),
+            @enumFromInt(move4),
+        };
+
+        box[i] = .{
+            .species = @enumFromInt(species),
+            .moves = &moves[i],
+        };
     }
 
-    return .{ .battle = battle, .box = box };
+    return battle;
 }
 
 fn base_transitions() !void {
@@ -117,14 +132,19 @@ fn box_switch_transitions() !void {
 }
 
 fn exhaust_random() !void {
-    const random_setup = try random_battle(@as(u64, @bitCast(std.time.milliTimestamp())));
-    const runtime = try run_exhaust(random_setup.battle, random_setup.box);
+    var rng = pkmn.PSRNG.init(@as(u64, @bitCast(std.time.milliTimestamp())));
+    var box: [10]pkmn.gen1.helpers.Pokemon = undefined;
+    var moves: [10][4]pkmn.gen1.Move = undefined;
+
+    const b = try random_battle(&rng, &box, &moves);
+
+    const runtime = try run_exhaust(b, &box);
     try stdout.print("Exhaust1: {d} ms\n\n", .{runtime});
 }
 
 fn exhaust1() !void {
     const battle = builder.tools.init_battle(&.{
-        .{ .species = .Pikachu, .moves = &.{.SeismicToss} },
+        .{ .species = .Pikachu, .moves = &.{ .Thunderbolt, .SeismicToss } },
     }, &.{
         .{ .species = .Pidgey, .moves = &.{ .Pound, .QuickAttack } },
         .{ .species = .Chansey, .moves = &.{ .Reflect, .SeismicToss, .SoftBoiled, .ThunderWave } },
@@ -161,13 +181,7 @@ fn exhaust2() !void {
         .{ .species = .Rhyhorn, .moves = &.{ .RockThrow, .Mist, .WaterGun, .Psybeam } },
     };
 
-    var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
-    defer box.deinit();
-    for (box_pokemon) |mon| {
-        try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
-    }
-
-    const runtime = try run_exhaust(battle, box);
+    const runtime = try run_exhaust(battle, &box_pokemon);
 
     try stdout.print("Exhaust2: {d} ms\n\n", .{runtime});
 }
@@ -280,15 +294,15 @@ fn run_transitions(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), result: pkmn.Result
     try stdout.print("Enemy Choices: {}\n", .{enemy_valid_choices.len});
 }
 
-fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), box_pokemon: []const pkmn.gen1.helpers.Pokemon) !u128 {
-    var b = battle;
-    const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
-
+fn run_exhaust(battle: pkmn.gen1.Battle(pkmn.gen1.PRNG), pokemon: []const pkmn.gen1.helpers.Pokemon) !u128 {
     var box = std.ArrayList(pkmn.gen1.Pokemon).init(alloc);
     defer box.deinit();
-    for (box_pokemon) |mon| {
+    for (pokemon) |mon| {
         try box.append(pkmn.gen1.helpers.Pokemon.init(mon));
     }
+
+    var b = battle;
+    const result = try b.update(pkmn.Choice{}, pkmn.Choice{}, &options);
 
     const root: *builder.DecisionNode = try alloc.create(builder.DecisionNode);
     root.* = .{
